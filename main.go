@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/binkynet/LocalWorker/service"
+	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 )
 
@@ -54,6 +55,11 @@ func main() {
 
 	logger := logging.MustGetLogger(projectName)
 
+	bridge, err := bridge.NewRaspberryPiBridge()
+	if err != nil {
+		Exitf("Failed to initialize Raspberry Pi Bridge: %v\n", err)
+	}
+
 	mqttConn, err := mqtt.NewMQTTConnection(logger, mqtt.Config{
 		Network:   mqttNetwork,
 		Address:   mqttAddress,
@@ -68,6 +74,7 @@ func main() {
 	svc, err := service.NewService(service.ServiceDependencies{
 		Log:      logger,
 		MqttConn: mqttConn,
+		Bridge:   bridge,
 	})
 	if err != nil {
 		Exitf("Failed to initialize Service: %v\n", err)

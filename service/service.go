@@ -16,9 +16,11 @@ package service
 
 import (
 	"context"
+	"time"
 
 	logging "github.com/op/go-logging"
 
+	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 )
 
@@ -30,6 +32,7 @@ type Service interface {
 type ServiceDependencies struct {
 	Log      *logging.Logger
 	MqttConn mqtt.API
+	Bridge   bridge.API
 }
 
 type service struct {
@@ -45,6 +48,19 @@ func NewService(deps ServiceDependencies) (Service, error) {
 
 // Run the worker until the given context is cancelled.
 func (s *service) Run(ctx context.Context) error {
+	s.Bridge.SetGreenLED(false)
+	s.Bridge.SetRedLED(true)
+	time.Sleep(time.Millisecond * 500)
+
+	s.Bridge.SetGreenLED(true)
+	s.Bridge.SetRedLED(true)
+	time.Sleep(time.Millisecond * 500)
+
+	s.Bridge.SetGreenLED(true)
+	s.Bridge.SetRedLED(false)
+
 	<-ctx.Done()
+	s.Bridge.SetGreenLED(false)
+	s.Bridge.SetRedLED(true)
 	return nil
 }
