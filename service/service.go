@@ -48,16 +48,24 @@ func NewService(deps ServiceDependencies) (Service, error) {
 
 // Run the worker until the given context is cancelled.
 func (s *service) Run(ctx context.Context) error {
-	s.Bridge.SetGreenLED(false)
+	// Fetch local slave configuration
+	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
 	s.Bridge.SetRedLED(true)
-	time.Sleep(time.Millisecond * 500)
 
-	s.Bridge.SetGreenLED(true)
+	// TODO fetch
+	time.Sleep(time.Second * 5)
+
+	// Initialize local slaves
+	s.Bridge.BlinkGreenLED(time.Millisecond * 100)
 	s.Bridge.SetRedLED(true)
-	time.Sleep(time.Millisecond * 500)
 
+	// TODO initialize
+
+	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
+
+	// TODO run loop
 
 	<-ctx.Done()
 	s.Bridge.SetGreenLED(false)

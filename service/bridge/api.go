@@ -14,6 +14,8 @@
 
 package bridge
 
+import "time"
+
 // API of the bridge, the hardware used to connect a Raspberry PI GPIO
 // port to a buffered I2C network that local slaves are connected to.
 type API interface {
@@ -21,4 +23,8 @@ type API interface {
 	SetGreenLED(on bool) error
 	// Turn Red status led on/off
 	SetRedLED(on bool) error
+	// Blink Green status led with given duration between on/off
+	BlinkGreenLED(delay time.Duration) error
+	// Blink Red status led with given duration between on/off
+	BlinkRedLED(delay time.Duration) error
 }
