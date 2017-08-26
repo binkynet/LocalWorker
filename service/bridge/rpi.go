@@ -16,15 +16,18 @@ package bridge
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/ecc1/gpio"
+	"golang.org/x/exp/io/i2c"
 )
 
 const (
 	greenLedPin = 23
 	redLedPin   = 24
+	i2cDev      = "/dev/i2c-1"
 )
 
 type statusLed struct {
@@ -81,6 +84,7 @@ func (l *statusLed) Blink(delay time.Duration) error {
 type piBridge struct {
 	greenLed statusLed
 	redLed   statusLed
+	devFs    *i2c.Devfs
 }
 
 // NewRaspberryPiBridge implements the bridge for Raspberry PI's
@@ -97,6 +101,7 @@ func NewRaspberryPiBridge() (API, error) {
 	return &piBridge{
 		greenLed: statusLed{pin: greenLed},
 		redLed:   statusLed{pin: redLed},
+		devFs:    &i2c.Devfs{Dev: i2cDev},
 	}, nil
 }
 
@@ -130,4 +135,34 @@ func (p *piBridge) BlinkRedLED(delay time.Duration) error {
 		return maskAny(err)
 	}
 	return nil
+}
+
+// Try to detect all known addresses of local slaves.
+func (p *piBridge) DetectLocalSlaveAddresses() ([]int, error) {
+	var result []int
+	/*for addr := 0; addr < 128; addr++ {
+		dev, err := i2c.Open(p.devFs, addr)
+		if err == nil {
+			dev.Close()
+			result = append(result, addr)
+		}
+	}*/
+	return result, nil
+}
+
+func (p *piBridge) Test() {
+	dev, err := Bus(1)
+	if err != nil {
+		fmt.Printf("Cannot open slave: %#v\n", err)
+		return
+	}
+	//defer dev.Close()
+	for r := byte(0); r <= 0x15; r++ {
+		time.Sleep(time.Millisecond * 50)
+		if v, err := dev.ReadByteBlock(0x20, r, 1); err != nil {
+			fmt.Printf("Cannot read register %2x: %#v\n", r, err)
+		} else {
+			fmt.Printf("Reg %2x == %2x\n", r, v[0])
+		}
+	}
 }

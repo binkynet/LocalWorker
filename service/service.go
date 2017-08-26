@@ -53,13 +53,23 @@ func (s *service) Run(ctx context.Context) error {
 	s.Bridge.SetRedLED(true)
 
 	// TODO fetch
-	time.Sleep(time.Second * 5)
+	//	time.Sleep(time.Second * 5)
 
 	// Initialize local slaves
 	s.Bridge.BlinkGreenLED(time.Millisecond * 100)
 	s.Bridge.SetRedLED(true)
 
+	// Detect local slaves
+	addrs, err := s.Bridge.DetectLocalSlaveAddresses()
+	if err != nil {
+		s.Log.Errorf("Failed to detect local slave addresses: %#v", err)
+	} else {
+		s.Log.Infof("Detected %d local slaves: %v", len(addrs), addrs)
+	}
+
 	// TODO initialize
+	s.Log.Info("Running test on address 0x20")
+	s.Bridge.Test()
 
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)

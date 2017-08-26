@@ -27,4 +27,9 @@ type API interface {
 	BlinkGreenLED(delay time.Duration) error
 	// Blink Red status led with given duration between on/off
 	BlinkRedLED(delay time.Duration) error
+
+	// Try to detect all known addresses of local slaves.
+	DetectLocalSlaveAddresses() ([]int, error)
+
+	Test()
 }

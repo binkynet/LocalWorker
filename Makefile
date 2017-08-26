@@ -16,7 +16,7 @@ BINNAME := bnLocalWorker
 BIN := $(BINDIR)/$(BINNAME)
 
 GOPATH := $(GOBUILDDIR)
-GOVERSION := 1.8.3-alpine
+GOVERSION := 1.9.0-alpine
 
 ifndef GOOS
 	GOOS := linux
