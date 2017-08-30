@@ -55,9 +55,9 @@ func main() {
 
 	logger := logging.MustGetLogger(projectName)
 
-	bridge, err := bridge.NewRaspberryPiBridge()
+	bridge, err := bridge.NewOrangePIZeroBridge()
 	if err != nil {
-		Exitf("Failed to initialize Raspberry Pi Bridge: %v\n", err)
+		Exitf("Failed to initialize Orange Pi Zero Bridge: %v\n", err)
 	}
 
 	mqttConn, err := mqtt.NewMQTTConnection(logger, mqtt.Config{

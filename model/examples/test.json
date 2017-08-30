@@ -1,0 +1,14 @@
+{
+    "devices": [{
+        "id": "io1",
+        "address": "0x20",
+        "type": "mcp23017"
+    }],
+    "objects": [{
+        "id": "led1",
+        "type": "binary-output",
+        "pins": {
+            "output": [{"device": "io1", "pin": 1}]
+        }
+    }]
+}
