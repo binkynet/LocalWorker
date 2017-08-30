@@ -48,10 +48,10 @@ func (d *mcp23017) PinCount() int {
 
 // Set the pin at given index (1...) to the given value
 func (d *mcp23017) Set(ctx context.Context, pin int, value bool) error {
-
+	return nil
 }
 
 // Set the pin at given index (1...)
 func (d *mcp23017) Get(ctx context.Context, pin int) (bool, error) {
-
+	return false, nil
 }

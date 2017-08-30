@@ -60,21 +60,21 @@ func main() {
 		Exitf("Failed to initialize Orange Pi Zero Bridge: %v\n", err)
 	}
 
-	mqttConn, err := mqtt.NewMQTTConnection(logger, mqtt.Config{
+	mqttSvc, err := mqtt.NewService(mqtt.Config{
 		Network:   mqttNetwork,
 		Address:   mqttAddress,
 		UserName:  mqttUserName,
 		Password:  mqttPassword,
 		TopicName: mqttTopicName,
-	})
+	}, logger)
 	if err != nil {
 		Exitf("Failed to initialize MQTT connection: %v\n", err)
 	}
 
 	svc, err := service.NewService(service.ServiceDependencies{
-		Log:      logger,
-		MqttConn: mqttConn,
-		Bridge:   bridge,
+		Log:         logger,
+		MqttService: mqttSvc,
+		Bridge:      bridge,
 	})
 	if err != nil {
 		Exitf("Failed to initialize Service: %v\n", err)

@@ -18,7 +18,7 @@ type Service interface {
 
 type Dependencies struct {
 	Log    zerolog.Logger
-	Bridge bridge.Bridge
+	Bridge bridge.API
 }
 
 // NewService instantiates a new Service.

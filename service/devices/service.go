@@ -53,12 +53,13 @@ func NewService(configs []model.HWDevice, bus *bridge.I2CBus) (Service, error) {
 // DeviceByID returns the device with given ID.
 // Return false if not found or not configured.
 func (s *service) DeviceByID(id string) (Device, bool) {
-	return s.configuredDevices[id]
+	dev, ok := s.configuredDevices[id]
+	return dev, ok
 }
 
 // Configure is called once to put all devices in the desired state.
 func (s *service) Configure(ctx context.Context) error {
-	var ae aerr.Aggregate
+	var ae aerr.AggregateError
 	configuredDevices := make(map[string]Device)
 	for id, d := range s.devices {
 		if err := d.Configure(ctx); err != nil {
@@ -73,9 +74,9 @@ func (s *service) Configure(ctx context.Context) error {
 
 // Close brings all devices back to a safe state.
 func (s *service) Close() error {
-	var ae aerr.Aggregate
+	var ae aerr.AggregateError
 	for _, d := range s.devices {
-		if err := d.Close(ctx); err != nil {
+		if err := d.Close(); err != nil {
 			ae.Add(maskAny(err))
 		}
 	}

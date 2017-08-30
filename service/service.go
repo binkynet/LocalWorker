@@ -22,6 +22,7 @@ import (
 
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/mqtt"
+	"github.com/binkynet/LocalWorker/service/worker"
 )
 
 type Service interface {
@@ -30,9 +31,9 @@ type Service interface {
 }
 
 type ServiceDependencies struct {
-	Log      zerolog.Logger
-	MqttConn mqtt.API
-	Bridge   bridge.API
+	Log         zerolog.Logger
+	MqttService mqtt.Service
+	Bridge      bridge.API
 }
 
 type service struct {
@@ -78,10 +79,44 @@ func (s *service) Run(ctx context.Context) error {
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
 
-	// TODO run loop
+	defer func() {
+		s.Bridge.SetGreenLED(false)
+		s.Bridge.SetRedLED(true)
+	}()
 
-	<-ctx.Done()
-	s.Bridge.SetGreenLED(false)
-	s.Bridge.SetRedLED(true)
-	return nil
+	for {
+		delay := time.Second
+
+		// Request configuration
+		conf, err := s.MqttService.RequestConfiguration(ctx)
+		if err != nil {
+			s.Log.Error().Err(err).Msg("Failed to request configuration")
+			// Wait a bit and then retry
+		} else {
+			// Create a new worker using given config
+			w, err := worker.NewService(conf, worker.Dependencies{
+				Log:    s.Log,
+				Bridge: s.Bridge,
+			})
+			if err != nil {
+				s.Log.Error().Err(err).Msg("Failed to create worker")
+				// Wait a bit and then retry
+			} else {
+				// Run worker
+				if err := w.Run(ctx); err != nil {
+					s.Log.Error().Err(err).Msg("Failed to run worker")
+				} else {
+					s.Log.Info().Err(err).Msg("Worker ended")
+				}
+			}
+		}
+
+		select {
+		case <-time.After(delay):
+			// Just continue
+		case <-ctx.Done():
+			// Context cancelled, stop.
+			return nil
+		}
+	}
 }
