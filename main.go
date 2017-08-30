@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 
-	logging "github.com/op/go-logging"
 	terminate "github.com/pulcy/go-terminate"
+	"github.com/rs/zerolog"
 	"github.com/spf13/pflag"
 
 	"github.com/binkynet/LocalWorker/service"
@@ -53,7 +53,7 @@ func main() {
 	pflag.StringVar(&mqttTopicName, "mqtt-topicname", "", "Topic name for MQTT messages")
 	pflag.Parse()
 
-	logger := logging.MustGetLogger(projectName)
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
 	bridge, err := bridge.NewOrangePIZeroBridge()
 	if err != nil {
@@ -82,7 +82,9 @@ func main() {
 
 	// Prepare to shutdown in a controlled manor
 	ctx, cancel := context.WithCancel(context.Background())
-	t := terminate.NewTerminator(logger.Infof, cancel)
+	t := terminate.NewTerminator(func(template string, args ...interface{}) {
+		logger.Info().Msgf(template, args...)
+	}, cancel)
 	go t.ListenSignals()
 
 	fmt.Printf("Starting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)

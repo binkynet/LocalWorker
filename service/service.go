@@ -18,7 +18,7 @@ import (
 	"context"
 	"time"
 
-	logging "github.com/op/go-logging"
+	"github.com/rs/zerolog"
 
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/mqtt"
@@ -30,7 +30,7 @@ type Service interface {
 }
 
 type ServiceDependencies struct {
-	Log      *logging.Logger
+	Log      zerolog.Logger
 	MqttConn mqtt.API
 	Bridge   bridge.API
 }
@@ -62,15 +62,15 @@ func (s *service) Run(ctx context.Context) error {
 	// Open bus
 	bus, err := s.Bridge.I2CBus()
 	if err != nil {
-		s.Log.Errorf("Failed to open I2CBus: %#v", err)
+		s.Log.Error().Err(err).Msg("Failed to open I2CBus")
 	} else {
 		// Detect local slaves
-		s.Log.Info("Detecting local slaves")
+		s.Log.Info().Msg("Detecting local slaves")
 		addrs := bus.DetectSlaveAddresses()
-		s.Log.Infof("Detected %d local slaves: %v", len(addrs), addrs)
+		s.Log.Info().Msgf("Detected %d local slaves: %v", len(addrs), addrs)
 
 		// TODO initialize
-		s.Log.Info("Running test on address 0x20")
+		s.Log.Info().Msg("Running test on address 0x20")
 		bridge.TestI2CBus(bus)
 	}
 

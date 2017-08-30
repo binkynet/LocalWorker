@@ -14,8 +14,8 @@
 
 package mqtt
 
-import logging "github.com/op/go-logging"
+import "github.com/rs/zerolog"
 
-func NewMQTTConnection(log *logging.Logger, config Config) (API, error) {
+func NewMQTTConnection(log zerolog.Logger, config Config) (API, error) {
 	return nil, nil
 }

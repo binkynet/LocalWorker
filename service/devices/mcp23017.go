@@ -36,6 +36,11 @@ func (d *mcp23017) Configure(ctx context.Context) error {
 	return nil
 }
 
+// Close brings the device back to a safe state.
+func (d *mcp23017) Close() error {
+	return nil
+}
+
 // PinCount returns the number of pins of the device
 func (d *mcp23017) PinCount() int {
 	return 16
