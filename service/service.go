@@ -59,17 +59,20 @@ func (s *service) Run(ctx context.Context) error {
 	s.Bridge.BlinkGreenLED(time.Millisecond * 100)
 	s.Bridge.SetRedLED(true)
 
-	// Detect local slaves
-	addrs, err := s.Bridge.DetectLocalSlaveAddresses()
+	// Open bus
+	bus, err := s.Bridge.I2CBus()
 	if err != nil {
-		s.Log.Errorf("Failed to detect local slave addresses: %#v", err)
+		s.Log.Errorf("Failed to open I2CBus: %#v", err)
 	} else {
+		// Detect local slaves
+		s.Log.Info("Detecting local slaves")
+		addrs := bus.DetectSlaveAddresses()
 		s.Log.Infof("Detected %d local slaves: %v", len(addrs), addrs)
-	}
 
-	// TODO initialize
-	s.Log.Info("Running test on address 0x20")
-	s.Bridge.Test()
+		// TODO initialize
+		s.Log.Info("Running test on address 0x20")
+		bridge.TestI2CBus(bus)
+	}
 
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)

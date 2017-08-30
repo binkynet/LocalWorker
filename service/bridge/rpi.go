@@ -16,7 +16,6 @@ package bridge
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -137,32 +136,11 @@ func (p *piBridge) BlinkRedLED(delay time.Duration) error {
 	return nil
 }
 
-// Try to detect all known addresses of local slaves.
-func (p *piBridge) DetectLocalSlaveAddresses() ([]int, error) {
-	var result []int
-	/*for addr := 0; addr < 128; addr++ {
-		dev, err := i2c.Open(p.devFs, addr)
-		if err == nil {
-			dev.Close()
-			result = append(result, addr)
-		}
-	}*/
-	return result, nil
-}
-
-func (p *piBridge) Test() {
-	dev, err := Bus(1)
+// Open the I2C bus
+func (p *piBridge) I2CBus() (*I2CBus, error) {
+	bus, err := Bus(1)
 	if err != nil {
-		fmt.Printf("Cannot open slave: %#v\n", err)
-		return
+		return nil, maskAny(err)
 	}
-	//defer dev.Close()
-	for r := byte(0); r <= 0x15; r++ {
-		time.Sleep(time.Millisecond * 50)
-		if v, err := dev.ReadByteBlock(0x20, r, 1); err != nil {
-			fmt.Printf("Cannot read register %2x: %#v\n", r, err)
-		} else {
-			fmt.Printf("Reg %2x == %2x\n", r, v[0])
-		}
-	}
+	return bus, nil
 }

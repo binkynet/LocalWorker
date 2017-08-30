@@ -14,7 +14,10 @@
 
 package bridge
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // API of the bridge, the hardware used to connect a Raspberry PI GPIO
 // port to a buffered I2C network that local slaves are connected to.
@@ -28,8 +31,17 @@ type API interface {
 	// Blink Red status led with given duration between on/off
 	BlinkRedLED(delay time.Duration) error
 
-	// Try to detect all known addresses of local slaves.
-	DetectLocalSlaveAddresses() ([]int, error)
+	// Open the I2C bus
+	I2CBus() (*I2CBus, error)
+}
 
-	Test()
+func TestI2CBus(bus *I2CBus) {
+	for r := byte(0); r <= 0x15; r++ {
+		time.Sleep(time.Millisecond * 50)
+		if v, err := bus.ReadByteBlock(0x20, r, 1); err != nil {
+			fmt.Printf("Cannot read register %2x: %#v\n", r, err)
+		} else {
+			fmt.Printf("Reg %2x == %2x\n", r, v[0])
+		}
+	}
 }

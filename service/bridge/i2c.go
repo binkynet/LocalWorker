@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -146,4 +147,16 @@ func (i2cbus *I2CBus) WriteByteBlock(addr, reg byte, list []byte) (err error) {
 	}
 
 	return
+}
+
+// DetectSlaveAddresses tries to detect the address available on the bus.
+func (i2cbus *I2CBus) DetectSlaveAddresses() []int {
+	var result []int
+	for addr := 0; addr < 128; addr++ {
+		time.Sleep(time.Millisecond)
+		if _, err := i2cbus.ReadByteBlock(byte(addr), 0, 1); err == nil {
+			result = append(result, addr)
+		}
+	}
+	return result
 }
