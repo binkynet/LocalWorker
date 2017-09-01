@@ -22,6 +22,8 @@ type Server interface {
 type API interface {
 	// Called to relay environment information.
 	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
+	// Called to force a complete reload of the worker.
+	Reload(ctx context.Context) error
 }
 
 type Config struct {
@@ -55,6 +57,7 @@ func (s *server) Run(ctx context.Context) error {
 	mux := httprouter.New()
 	mux.NotFound = http.HandlerFunc(s.notFound)
 	mux.POST("/environment", s.handleEnvironment)
+	mux.DELETE("/environment", s.handleReload)
 
 	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
 	httpServer := &http.Server{
@@ -123,6 +126,21 @@ func parseBody(r *http.Request, data interface{}) error {
 	}
 	if err := json.Unmarshal(body, data); err != nil {
 		return maskAny(err)
+	}
+	return nil
+}
+
+// sendJSON encodes given body as JSON and sends it to the given writer with given HTTP status.
+func sendJSON(w http.ResponseWriter, status int, body interface{}) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if body == nil {
+		w.Write([]byte("{}"))
+	} else {
+		encoder := json.NewEncoder(w)
+		if err := encoder.Encode(body); err != nil {
+			return maskAny(err)
+		}
 	}
 	return nil
 }

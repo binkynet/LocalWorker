@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
@@ -32,17 +31,12 @@ func (s *server) handleEnvironment(w http.ResponseWriter, r *http.Request, ps ht
 	}
 }
 
-// sendJSON encodes given body as JSON and sends it to the given writer with given HTTP status.
-func sendJSON(w http.ResponseWriter, status int, body interface{}) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if body == nil {
-		w.Write([]byte("{}"))
+func (s *server) handleReload(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	ctx := context.Background()
+	err := s.api.Reload(ctx)
+	if err != nil {
+		handleError(w, err)
 	} else {
-		encoder := json.NewEncoder(w)
-		if err := encoder.Encode(body); err != nil {
-			return maskAny(err)
-		}
+		sendJSON(w, http.StatusOK, nil)
 	}
-	return nil
 }

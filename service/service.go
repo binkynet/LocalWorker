@@ -33,6 +33,8 @@ type Service interface {
 	Run(ctx context.Context) error
 	// Called to relay environment information.
 	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
+	// Called to force a complete reload of the worker.
+	Reload(ctx context.Context) error
 }
 
 type Config struct {
@@ -52,6 +54,7 @@ type service struct {
 	Dependencies
 
 	registrationCancel func()
+	workerCancel       func()
 	mqttService        mqtt.Service
 }
 
@@ -63,7 +66,9 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 	}, nil
 }
 
-// Run the worker until the given context is cancelled.
+// Run initialize the local worker and then continues
+// to register the worker, followed by running the worker loop
+// in a given environment.
 func (s *service) Run(ctx context.Context) error {
 	// Create host ID
 	hostID, err := createHostID()
@@ -87,24 +92,44 @@ func (s *service) Run(ctx context.Context) error {
 		s.Log.Info().Msgf("Detected %d local slaves: %v", len(addrs), addrs)
 	}
 
-	// Register worker
-	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
-	s.Bridge.SetRedLED(false)
+	for {
+		// Register worker
+		s.Bridge.BlinkGreenLED(time.Millisecond * 250)
+		s.Bridge.SetRedLED(false)
 
-	s.Log.Debug().Msg("registering worker...")
-	registrationCtx, registrationCancel := context.WithCancel(ctx)
-	s.registrationCancel = registrationCancel
-	err = s.registerWorker(registrationCtx, hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
-	registrationCancel()
-	if err != nil {
-		s.Log.Error().Err(err).Msg("registerWorker failed")
-		return maskAny(err)
-	}
-	if s.mqttService == nil {
-		return maskAny(fmt.Errorf("MQTT service has not been created"))
-	}
-	s.Log.Debug().Msg("worker registration completed")
+		s.Log.Debug().Msg("registering worker...")
+		registrationCtx, registrationCancel := context.WithCancel(ctx)
+		s.registrationCancel = registrationCancel
+		err = s.registerWorker(registrationCtx, hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
+		registrationCancel()
+		if err != nil {
+			s.Log.Error().Err(err).Msg("registerWorker failed")
+			return maskAny(err)
+		}
+		if s.mqttService == nil {
+			return maskAny(fmt.Errorf("MQTT service has not been created"))
+		}
+		s.Log.Debug().Msg("worker registration completed")
 
+		// Initialization done, run loop
+		workerCtx, workerCancel := context.WithCancel(ctx)
+		s.workerCancel = workerCancel
+		err = s.runWorkerInEnvironment(workerCtx)
+		workerCancel()
+		if err != nil {
+			s.Log.Error().Err(err).Msg("registerWorker failed")
+			return maskAny(err)
+		}
+
+		// If context cancelled, return
+		if ctx.Err() != nil {
+			return nil
+		}
+	}
+}
+
+// Run the worker until the given context is cancelled.
+func (s *service) runWorkerInEnvironment(ctx context.Context) error {
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
@@ -162,6 +187,17 @@ func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvi
 		s.mqttService = mqttSvc
 	}
 
-	s.registrationCancel()
+	if cancel := s.registrationCancel; cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
+// Called to force a complete reload of the worker.
+func (s *service) Reload(ctx context.Context) error {
+	s.Log.Info().Msg("Reload called")
+	if cancel := s.workerCancel; cancel != nil {
+		cancel()
+	}
 	return nil
 }
