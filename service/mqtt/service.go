@@ -16,9 +16,23 @@ package mqtt
 
 import (
 	"context"
+	"encoding/json"
+	"net"
+	"strconv"
+	"sync"
 
-	"github.com/binkynet/BinkyNet/model"
 	"github.com/rs/zerolog"
+	"github.com/yosssi/gmq/mqtt"
+	"github.com/yosssi/gmq/mqtt/client"
+)
+
+const (
+	// QosAtMostOnce represents "QoS 0: At most once delivery".
+	QosAtMostOnce = mqtt.QoS0
+	// QosAsLeastOnce represents "QoS 1: At least once delivery".
+	QosAsLeastOnce = mqtt.QoS1
+	//QosExactlyOnce represents "QoS 2: Exactly once delivery".
+	QosExactlyOnce = mqtt.QoS2
 )
 
 type Config struct {
@@ -26,32 +40,87 @@ type Config struct {
 	Port     int
 	UserName string
 	Password string
+	ClientID string
 }
 
 // Service contains the API exposed by the MQTT service.
 type Service interface {
 	// Close the service
 	Close() error
-	// RequestConfiguration sends a request to ask for the configuration of this worker.
-	RequestConfiguration(ctx context.Context) (model.LocalConfiguration, error)
+	// Publish a JSON encoded message into a topic.
+	Publish(ctx context.Context, msg interface{}, topic string, qos byte) error
 }
 
 // NewService instantiates a new MQTT service.
 func NewService(config Config, logger zerolog.Logger) (Service, error) {
-	return &service{}, nil
+	// Create an MQTT Client.
+	cli := client.New(&client.Options{
+		// Define the processing of the error handler.
+		ErrorHandler: func(err error) {
+			logger.Error().Err(err).Msg("MQTT error")
+		},
+	})
+
+	return &service{
+		Config: config,
+		client: cli,
+	}, nil
 }
 
 type service struct {
+	Config
+	mutex     sync.Mutex
+	client    *client.Client
+	connected bool
 }
 
 // Close the service
 func (s *service) Close() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.connected {
+		s.client.Disconnect()
+		s.connected = false
+	}
+
+	s.client.Terminate()
 	return nil
 }
 
-// RequestConfiguration sends a request to ask for the configuration of this worker.
-// The given callback is called when the configuration is received.
-func (s *service) RequestConfiguration(ctx context.Context) (model.LocalConfiguration, error) {
-	// TODO
-	return model.LocalConfiguration{}, nil
+// connect opens a connection.
+func (s *service) connect() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.connected {
+		return nil
+	}
+	// Connect to the MQTT Server.
+	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
+	if err := s.client.Connect(&client.ConnectOptions{
+		Network:  "tcp",
+		Address:  addr,
+		ClientID: []byte(s.ClientID),
+	}); err != nil {
+		return maskAny(err)
+	}
+	s.connected = true
+	return nil
+}
+
+// Publish a JSON encoded message into a topic.
+func (s *service) Publish(ctx context.Context, msg interface{}, topic string, qos byte) error {
+	encodedMsg, err := json.Marshal(msg)
+	if err != nil {
+		return maskAny(err)
+	}
+	if err := s.client.Publish(&client.PublishOptions{
+		QoS:       qos,
+		TopicName: []byte(topic),
+		Message:   encodedMsg,
+	}); err != nil {
+		return maskAny(err)
+	}
+	return nil
 }

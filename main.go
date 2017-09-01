@@ -69,12 +69,13 @@ func main() {
 		ServerSecure:  false,
 	}, service.Dependencies{
 		Log: logger,
-		MqttBuilder: func(env discoveryAPI.WorkerEnvironment) (mqtt.Service, error) {
+		MqttBuilder: func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error) {
 			result, err := mqtt.NewService(mqtt.Config{
 				Host:     env.Mqtt.Host,
 				Port:     env.Mqtt.Port,
 				UserName: env.Mqtt.UserName,
 				Password: env.Mqtt.Password,
+				ClientID: clientID,
 			}, logger)
 			if err != nil {
 				return nil, maskAny(err)
