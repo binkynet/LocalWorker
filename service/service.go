@@ -16,8 +16,11 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
 	"github.com/binkynet/LocalWorker/service/bridge"
@@ -28,37 +31,50 @@ import (
 type Service interface {
 	// Run the worker until the given context is cancelled.
 	Run(ctx context.Context) error
+	// Called to relay environment information.
+	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
 }
 
-type ServiceDependencies struct {
+type Config struct {
+	DiscoveryPort int
+	ServerPort    int
+	ServerSecure  bool
+}
+
+type Dependencies struct {
 	Log         zerolog.Logger
-	MqttService mqtt.Service
 	Bridge      bridge.API
+	MqttBuilder func(discoveryAPI.WorkerEnvironment) (mqtt.Service, error)
 }
 
 type service struct {
-	ServiceDependencies
+	Config
+	Dependencies
+
+	registrationCancel func()
+	mqttService        mqtt.Service
 }
 
 // NewService creates a Service instance and returns it.
-func NewService(deps ServiceDependencies) (Service, error) {
+func NewService(conf Config, deps Dependencies) (Service, error) {
 	return &service{
-		ServiceDependencies: deps,
+		Config:       conf,
+		Dependencies: deps,
 	}, nil
 }
 
 // Run the worker until the given context is cancelled.
 func (s *service) Run(ctx context.Context) error {
+	// Create host ID
+	hostID, err := createHostID()
+	if err != nil {
+		return errors.Wrap(err, "Failed to create host ID")
+	}
+	s.Log.Info().Str("id", hostID).Msg("Found host ID")
+
 	// Fetch local slave configuration
 	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
-	s.Bridge.SetRedLED(true)
-
-	// TODO fetch
-	//	time.Sleep(time.Second * 5)
-
-	// Initialize local slaves
-	s.Bridge.BlinkGreenLED(time.Millisecond * 100)
-	s.Bridge.SetRedLED(true)
+	s.Bridge.BlinkRedLED(time.Millisecond * 250)
 
 	// Open bus
 	bus, err := s.Bridge.I2CBus()
@@ -69,11 +85,25 @@ func (s *service) Run(ctx context.Context) error {
 		s.Log.Info().Msg("Detecting local slaves")
 		addrs := bus.DetectSlaveAddresses()
 		s.Log.Info().Msgf("Detected %d local slaves: %v", len(addrs), addrs)
-
-		// TODO initialize
-		s.Log.Info().Msg("Running test on address 0x20")
-		bridge.TestI2CBus(bus)
 	}
+
+	// Register worker
+	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
+	s.Bridge.SetRedLED(false)
+
+	s.Log.Debug().Msg("registering worker...")
+	registrationCtx, registrationCancel := context.WithCancel(ctx)
+	s.registrationCancel = registrationCancel
+	err = s.registerWorker(registrationCtx, hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
+	registrationCancel()
+	if err != nil {
+		s.Log.Error().Err(err).Msg("registerWorker failed")
+		return maskAny(err)
+	}
+	if s.mqttService == nil {
+		return maskAny(fmt.Errorf("MQTT service has not been created"))
+	}
+	s.Log.Debug().Msg("worker registration completed")
 
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)
@@ -88,7 +118,7 @@ func (s *service) Run(ctx context.Context) error {
 		delay := time.Second
 
 		// Request configuration
-		conf, err := s.MqttService.RequestConfiguration(ctx)
+		conf, err := s.mqttService.RequestConfiguration(ctx)
 		if err != nil {
 			s.Log.Error().Err(err).Msg("Failed to request configuration")
 			// Wait a bit and then retry
@@ -119,4 +149,19 @@ func (s *service) Run(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// Called to relay environment information.
+func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error {
+	s.Log.Info().Msg("Environment called")
+
+	mqttSvc, err := s.MqttBuilder(input)
+	if err != nil {
+		s.Log.Error().Err(err).Msg("Failed to create MQTT service")
+	} else {
+		s.mqttService = mqttSvc
+	}
+
+	s.registrationCancel()
+	return nil
 }

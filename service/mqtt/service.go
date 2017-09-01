@@ -22,11 +22,10 @@ import (
 )
 
 type Config struct {
-	Network   string
-	Address   string
-	UserName  string
-	Password  string
-	TopicName string
+	Host     string
+	Port     int
+	UserName string
+	Password string
 }
 
 // Service contains the API exposed by the MQTT service.
