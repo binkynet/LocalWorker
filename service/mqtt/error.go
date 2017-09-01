@@ -17,5 +17,6 @@ package mqtt
 import "github.com/pkg/errors"
 
 var (
-	maskAny = errors.WithStack
+	SubscriptionClosedError = errors.New("subscription closed")
+	maskAny                 = errors.WithStack
 )

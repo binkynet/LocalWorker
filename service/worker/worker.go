@@ -8,6 +8,8 @@ import (
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/devices"
+	"github.com/binkynet/LocalWorker/service/mqtt"
+	"github.com/binkynet/LocalWorker/service/objects"
 )
 
 // Service contains the API exposed by the worker service
@@ -17,8 +19,9 @@ type Service interface {
 }
 
 type Dependencies struct {
-	Log    zerolog.Logger
-	Bridge bridge.API
+	Log         zerolog.Logger
+	Bridge      bridge.API
+	MQTTService mqtt.Service
 }
 
 // NewService instantiates a new Service.
@@ -33,6 +36,7 @@ type service struct {
 	config model.LocalConfiguration
 	Dependencies
 	devService devices.Service
+	objService objects.Service
 }
 
 // Run the worker service until the given context is cancelled.
@@ -42,15 +46,32 @@ func (s *service) Run(ctx context.Context) error {
 	if err != nil {
 		return maskAny(err)
 	}
-	// Configure devices
+	// Build services
 	devService, err := devices.NewService(s.config.Devices, bus)
 	if err != nil {
 		return maskAny(err)
 	}
+	objService, err := objects.NewService(s.config.Objects)
+	if err != nil {
+		return maskAny(err)
+	}
 	s.devService = devService
+	s.objService = objService
+
+	defer func() {
+		devService.Close()
+		objService.Close()
+	}()
+
+	// Configure devices
 	if err := devService.Configure(ctx); err != nil {
 		// Log error
 		s.Log.Error().Err(err).Msg("Not all devices are configured")
+	}
+	// Configure objects
+	if err := objService.Configure(ctx); err != nil {
+		// Log error
+		s.Log.Error().Err(err).Msg("Not all objects are configured")
 	}
 
 	<-ctx.Done()

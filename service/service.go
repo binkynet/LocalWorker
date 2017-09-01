@@ -177,8 +177,9 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 			s.Log.Debug().Interface("config", conf).Msg("received worker config")
 			// Create a new worker using given config
 			w, err := worker.NewService(conf, worker.Dependencies{
-				Log:    s.Log.With().Str("component", "worker").Logger(),
-				Bridge: s.Bridge,
+				Log:         s.Log.With().Str("component", "worker").Logger(),
+				Bridge:      s.Bridge,
+				MQTTService: mqttService,
 			})
 			if err != nil {
 				s.Log.Error().Err(err).Msg("Failed to create worker")

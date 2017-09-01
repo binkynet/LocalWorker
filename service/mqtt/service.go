@@ -49,6 +49,16 @@ type Service interface {
 	Close() error
 	// Publish a JSON encoded message into a topic.
 	Publish(ctx context.Context, msg interface{}, topic string, qos byte) error
+	// Subscribe to a topic
+	Subscribe(ctx context.Context, topic string, qos byte) (Subscription, error)
+}
+
+// Subscription for a single topic
+type Subscription interface {
+	// Unsubscribe.
+	Close() error
+	// NextMsg blocks until the next message has been received.
+	NextMsg(ctx context.Context, result interface{}) error
 }
 
 // NewService instantiates a new MQTT service.
@@ -120,6 +130,63 @@ func (s *service) Publish(ctx context.Context, msg interface{}, topic string, qo
 		TopicName: []byte(topic),
 		Message:   encodedMsg,
 	}); err != nil {
+		return maskAny(err)
+	}
+	return nil
+}
+
+// Subscribe to a topic
+func (s *service) Subscribe(ctx context.Context, topic string, qos byte) (Subscription, error) {
+	result := &subscription{
+		client: s.client,
+		topic:  topic,
+		queue:  make(chan []byte, 32),
+	}
+	if err := s.client.Subscribe(&client.SubscribeOptions{
+		SubReqs: []*client.SubReq{
+			&client.SubReq{
+				TopicFilter: []byte(topic),
+				QoS:         qos,
+				Handler:     result.messageHandler,
+			},
+		},
+	}); err != nil {
+		return nil, maskAny(err)
+	}
+	return result, nil
+}
+
+type subscription struct {
+	client *client.Client
+	topic  string
+	queue  chan []byte
+}
+
+// Decode message and put in queue
+func (s *subscription) messageHandler(topicName, message []byte) {
+	s.queue <- message
+}
+
+// Unsubscribe.
+func (s *subscription) Close() error {
+	close(s.queue)
+	if err := s.client.Unsubscribe(&client.UnsubscribeOptions{
+		TopicFilters: [][]byte{
+			[]byte(s.topic),
+		},
+	}); err != nil {
+		return maskAny(err)
+	}
+	return nil
+}
+
+// NextMsg blocks until the next message has been received.
+func (s *subscription) NextMsg(ctx context.Context, result interface{}) error {
+	encodedMsg, ok := <-s.queue
+	if !ok {
+		return maskAny(SubscriptionClosedError)
+	}
+	if err := json.Unmarshal(encodedMsg, result); err != nil {
 		return maskAny(err)
 	}
 	return nil

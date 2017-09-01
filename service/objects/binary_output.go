@@ -1,6 +1,8 @@
 package objects
 
 import (
+	"context"
+
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/pkg/errors"
@@ -41,4 +43,9 @@ func newBinaryOutput(config model.Object, devService devices.Service) (Object, e
 		outputDevice: gpio,
 		pin:          pin,
 	}, nil
+}
+
+// Configure is called once to put the object in the desired state.
+func (o *binaryOutput) Configure(ctx context.Context) error {
+	return nil
 }
