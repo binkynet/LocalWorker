@@ -30,6 +30,8 @@ type Config struct {
 
 // Service contains the API exposed by the MQTT service.
 type Service interface {
+	// Close the service
+	Close() error
 	// RequestConfiguration sends a request to ask for the configuration of this worker.
 	RequestConfiguration(ctx context.Context) (model.LocalConfiguration, error)
 }
@@ -40,6 +42,11 @@ func NewService(config Config, logger zerolog.Logger) (Service, error) {
 }
 
 type service struct {
+}
+
+// Close the service
+func (s *service) Close() error {
+	return nil
 }
 
 // RequestConfiguration sends a request to ask for the configuration of this worker.

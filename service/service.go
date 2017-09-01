@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
@@ -53,6 +54,7 @@ type service struct {
 	Config
 	Dependencies
 
+	mutex              sync.Mutex
 	registrationCancel func()
 	workerCancel       func()
 	mqttService        mqtt.Service
@@ -60,6 +62,7 @@ type service struct {
 
 // NewService creates a Service instance and returns it.
 func NewService(conf Config, deps Dependencies) (Service, error) {
+	deps.Log = deps.Log.With().Str("component", "service").Logger()
 	return &service{
 		Config:       conf,
 		Dependencies: deps,
@@ -99,22 +102,31 @@ func (s *service) Run(ctx context.Context) error {
 
 		s.Log.Debug().Msg("registering worker...")
 		registrationCtx, registrationCancel := context.WithCancel(ctx)
+		s.mutex.Lock()
 		s.registrationCancel = registrationCancel
+		s.mutex.Unlock()
 		err = s.registerWorker(registrationCtx, hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
 		registrationCancel()
 		if err != nil {
 			s.Log.Error().Err(err).Msg("registerWorker failed")
 			return maskAny(err)
 		}
-		if s.mqttService == nil {
+
+		s.mutex.Lock()
+		mqttService := s.mqttService
+		s.mqttService = nil
+		s.mutex.Unlock()
+		if mqttService == nil {
 			return maskAny(fmt.Errorf("MQTT service has not been created"))
 		}
 		s.Log.Debug().Msg("worker registration completed")
 
 		// Initialization done, run loop
 		workerCtx, workerCancel := context.WithCancel(ctx)
+		s.mutex.Lock()
 		s.workerCancel = workerCancel
-		err = s.runWorkerInEnvironment(workerCtx)
+		s.mutex.Unlock()
+		err = s.runWorkerInEnvironment(workerCtx, mqttService)
 		workerCancel()
 		if err != nil {
 			s.Log.Error().Err(err).Msg("registerWorker failed")
@@ -129,7 +141,9 @@ func (s *service) Run(ctx context.Context) error {
 }
 
 // Run the worker until the given context is cancelled.
-func (s *service) runWorkerInEnvironment(ctx context.Context) error {
+func (s *service) runWorkerInEnvironment(ctx context.Context, mqttService mqtt.Service) error {
+	defer mqttService.Close()
+
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
@@ -143,14 +157,14 @@ func (s *service) runWorkerInEnvironment(ctx context.Context) error {
 		delay := time.Second
 
 		// Request configuration
-		conf, err := s.mqttService.RequestConfiguration(ctx)
+		conf, err := mqttService.RequestConfiguration(ctx)
 		if err != nil {
 			s.Log.Error().Err(err).Msg("Failed to request configuration")
 			// Wait a bit and then retry
 		} else {
 			// Create a new worker using given config
 			w, err := worker.NewService(conf, worker.Dependencies{
-				Log:    s.Log,
+				Log:    s.Log.With().Str("component", "worker").Logger(),
 				Bridge: s.Bridge,
 			})
 			if err != nil {
@@ -180,10 +194,16 @@ func (s *service) runWorkerInEnvironment(ctx context.Context) error {
 func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error {
 	s.Log.Info().Msg("Environment called")
 
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	mqttSvc, err := s.MqttBuilder(input)
 	if err != nil {
 		s.Log.Error().Err(err).Msg("Failed to create MQTT service")
 	} else {
+		if s.mqttService != nil {
+			s.mqttService.Close()
+		}
 		s.mqttService = mqttSvc
 	}
 
@@ -196,6 +216,10 @@ func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvi
 // Called to force a complete reload of the worker.
 func (s *service) Reload(ctx context.Context) error {
 	s.Log.Info().Msg("Reload called")
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	if cancel := s.workerCancel; cancel != nil {
 		cancel()
 	}
