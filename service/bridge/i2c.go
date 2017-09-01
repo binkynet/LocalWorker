@@ -99,6 +99,14 @@ func (i2cbus *I2CBus) WriteByte(addr, reg, value byte) (err error) {
 	return
 }
 
+func (i2cbus *I2CBus) ReadByte(addr, reg byte) (value byte, err error) {
+	list, err := i2cbus.ReadByteBlock(addr, reg, 1)
+	if err != nil {
+		return 0, err
+	}
+	return list[0], nil
+}
+
 func (i2cbus *I2CBus) ReadByteBlock(addr, reg byte, readLength byte) (list []byte, err error) {
 	i2cbus.lock.Lock()
 	defer i2cbus.lock.Unlock()
