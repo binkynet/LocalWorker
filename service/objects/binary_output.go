@@ -1,7 +1,7 @@
 package objects
 
 import (
-	"github.com/binkynet/LocalWorker/model"
+	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/pkg/errors"
 )

@@ -5,7 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/binkynet/LocalWorker/model"
+	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/bridge"
 )
 

@@ -5,7 +5,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/binkynet/LocalWorker/model"
+	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/devices"
 )

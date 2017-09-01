@@ -5,7 +5,7 @@ import (
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 
-	"github.com/binkynet/LocalWorker/model"
+	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/pkg/errors"
 )

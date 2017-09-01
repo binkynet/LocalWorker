@@ -44,6 +44,7 @@ local:
 	@mkdir -p $(ORGDIR)
 	@rm -f $(REPODIR) && ln -s ../../../../ $(REPODIR)
 	@GOPATH=$(GOPATH) pulsar go flatten -V $(VENDORDIR)
+	@GOPATH=$(GOPATH) pulsar go get $(ORGPATH)/BinkyNet/...
 
 $(BIN): .gobuild $(SOURCES)
 	docker run \
