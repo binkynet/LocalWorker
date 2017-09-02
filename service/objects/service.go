@@ -4,9 +4,11 @@ import (
 	"context"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/model"
+	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
 )
@@ -26,20 +28,24 @@ type service struct {
 	objects           map[string]Object
 	configuredObjects map[string]Object
 	topicPrefix       string
+	log               zerolog.Logger
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(configs []model.Object, topicPrefix string) (Service, error) {
+func NewService(configs []model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		objects:           make(map[string]Object),
 		configuredObjects: make(map[string]Object),
 		topicPrefix:       topicPrefix,
+		log:               log,
 	}
 	for _, c := range configs {
 		var obj Object
 		var err error
 		switch c.Type {
+		case model.ObjectTypeBinaryOutput:
+			obj, err = newBinaryOutput(c, devService)
 		default:
 			return nil, errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
@@ -48,6 +54,7 @@ func NewService(configs []model.Object, topicPrefix string) (Service, error) {
 		}
 		s.objects[c.ID] = obj
 	}
+	s.log.Debug().Msgf("created %d objects", len(s.objects))
 	return s, nil
 }
 
@@ -64,8 +71,10 @@ func (s *service) Configure(ctx context.Context) error {
 	configuredObjects := make(map[string]Object)
 	for id, d := range s.objects {
 		if err := d.Configure(ctx); err != nil {
+			s.log.Error().Err(err).Str("id", id).Msg("Failed to configure object")
 			ae.Add(maskAny(err))
 		} else {
+			s.log.Debug().Str("id", id).Msg("configured object")
 			configuredObjects[id] = d
 		}
 	}
@@ -75,23 +84,30 @@ func (s *service) Configure(ctx context.Context) error {
 
 // Run all required topics until the given context is cancelled.
 func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
-	g, ctx := errgroup.WithContext(ctx)
-	visitedTypes := make(map[*ObjectType]struct{})
-	for _, obj := range s.configuredObjects {
-		objType := obj.Type()
-		if _, found := visitedTypes[objType]; found {
-			// Type already running
-			continue
-		}
-		g.Go(func() error {
-			if err := objType.Run(ctx, mqttService, s.topicPrefix, s); err != nil {
-				return maskAny(err)
+	if len(s.configuredObjects) == 0 {
+		s.log.Warn().Msg("no configured objects, just waiting for context to be cancelled")
+		<-ctx.Done()
+	} else {
+		g, ctx := errgroup.WithContext(ctx)
+		visitedTypes := make(map[*ObjectType]struct{})
+		for _, obj := range s.configuredObjects {
+			objType := obj.Type()
+			if _, found := visitedTypes[objType]; found {
+				// Type already running
+				continue
 			}
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return maskAny(err)
+			visitedTypes[objType] = struct{}{}
+			g.Go(func() error {
+				s.log.Debug().Str("type", s.topicPrefix).Msg("starting object type")
+				if err := objType.Run(ctx, s.log, mqttService, s.topicPrefix, s); err != nil {
+					return maskAny(err)
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return maskAny(err)
+		}
 	}
 	return nil
 }

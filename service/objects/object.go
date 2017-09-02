@@ -6,6 +6,7 @@ import (
 
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 )
 
 // Object contains the API supported by all types of objects.
@@ -28,10 +29,11 @@ type ObjectType struct {
 
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
-func (t *ObjectType) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string, service Service) error {
+func (t *ObjectType) Run(ctx context.Context, log zerolog.Logger, mqttService mqtt.Service, topicPrefix string, service Service) error {
 	topic := path.Join(topicPrefix, t.TopicSuffix)
 	subscription, err := mqttService.Subscribe(ctx, topic, mqtt.QosAsLeastOnce)
 	if err != nil {
+		log.Error().Err(err).Str("topic", topic).Msg("Failed to subscribe to MQTT topic")
 		return maskAny(err)
 	}
 	defer subscription.Close()
@@ -42,6 +44,7 @@ func (t *ObjectType) Run(ctx context.Context, mqttService mqtt.Service, topicPre
 			if errors.Cause(err) == context.Canceled {
 				return nil
 			}
+			log.Error().Err(err).Str("topic", topic).Msg("Failed to get next message")
 			return maskAny(err)
 		}
 	}

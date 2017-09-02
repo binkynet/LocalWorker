@@ -125,6 +125,9 @@ func (s *service) Publish(ctx context.Context, msg interface{}, topic string, qo
 	if err != nil {
 		return maskAny(err)
 	}
+	if err := s.connect(); err != nil {
+		return maskAny(err)
+	}
 	if err := s.client.Publish(&client.PublishOptions{
 		QoS:       qos,
 		TopicName: []byte(topic),
@@ -141,6 +144,9 @@ func (s *service) Subscribe(ctx context.Context, topic string, qos byte) (Subscr
 		client: s.client,
 		topic:  topic,
 		queue:  make(chan []byte, 32),
+	}
+	if err := s.connect(); err != nil {
+		return nil, maskAny(err)
 	}
 	if err := s.client.Subscribe(&client.SubscribeOptions{
 		SubReqs: []*client.SubReq{
@@ -182,12 +188,17 @@ func (s *subscription) Close() error {
 
 // NextMsg blocks until the next message has been received.
 func (s *subscription) NextMsg(ctx context.Context, result interface{}) error {
-	encodedMsg, ok := <-s.queue
-	if !ok {
-		return maskAny(SubscriptionClosedError)
+	select {
+	case <-ctx.Done():
+		// Context cancelled
+		return ctx.Err()
+	case encodedMsg, ok := <-s.queue:
+		if !ok {
+			return maskAny(SubscriptionClosedError)
+		}
+		if err := json.Unmarshal(encodedMsg, result); err != nil {
+			return maskAny(err)
+		}
+		return nil
 	}
-	if err := json.Unmarshal(encodedMsg, result); err != nil {
-		return maskAny(err)
-	}
-	return nil
 }

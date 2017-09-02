@@ -47,37 +47,47 @@ type service struct {
 // Run the worker service until the given context is cancelled.
 func (s *service) Run(ctx context.Context) error {
 	// Open I2C bus
+	s.Log.Debug().Msg("open I2C bus")
 	bus, err := s.Bridge.I2CBus()
 	if err != nil {
 		return maskAny(err)
 	}
-	// Build services
+	// Build devices service
+	s.Log.Debug().Msg("build devices service")
 	devService, err := devices.NewService(s.config.Devices, bus)
 	if err != nil {
 		return maskAny(err)
 	}
-	objService, err := objects.NewService(s.config.Objects, s.config.TopicPrefix)
-	if err != nil {
-		return maskAny(err)
-	}
 	s.devService = devService
-	s.objService = objService
 
 	defer func() {
+		s.Log.Debug().Msg("closing devices service")
 		devService.Close()
 	}()
 
 	// Configure devices
+	s.Log.Debug().Msg("configure devices")
 	if err := devService.Configure(ctx); err != nil {
 		// Log error
 		s.Log.Error().Err(err).Msg("Not all devices are configured")
 	}
+
+	// Build objects service
+	s.Log.Debug().Msg("build objects service")
+	objService, err := objects.NewService(s.config.Objects, s.config.TopicPrefix, devService, s.Log.With().Str("component", "worker.objects").Logger())
+	if err != nil {
+		return maskAny(err)
+	}
+	s.objService = objService
+
 	// Configure objects
+	s.Log.Debug().Msg("configure objects")
 	if err := objService.Configure(ctx); err != nil {
 		// Log error
 		s.Log.Error().Err(err).Msg("Not all objects are configured")
 	}
 	// Run objects
+	s.Log.Debug().Msg("run objects")
 	if err := objService.Run(ctx, s.MQTTService); err != nil {
 		s.Log.Error().Err(err).Msg("Run failed")
 		return maskAny(err)
