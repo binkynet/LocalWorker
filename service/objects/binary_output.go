@@ -4,8 +4,23 @@ import (
 	"context"
 
 	"github.com/binkynet/BinkyNet/model"
+	"github.com/binkynet/BinkyNet/mq"
 	"github.com/binkynet/LocalWorker/service/devices"
+	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
+)
+
+var (
+	binaryOutputType = &ObjectType{
+		TopicSuffix: mq.BinaryOutputRequest{}.TopicSuffix(),
+		NextMessage: func(ctx context.Context, subscription mqtt.Subscription, service Service) error {
+			var msg mq.BinaryOutputRequest
+			if err := subscription.NextMsg(ctx, &msg); err != nil {
+				return maskAny(err)
+			}
+			return nil
+		},
+	}
 )
 
 type binaryOutput struct {
@@ -43,6 +58,11 @@ func newBinaryOutput(config model.Object, devService devices.Service) (Object, e
 		outputDevice: gpio,
 		pin:          pin,
 	}, nil
+}
+
+// Return the type of this object.
+func (o *binaryOutput) Type() *ObjectType {
+	return binaryOutputType
 }
 
 // Configure is called once to put the object in the desired state.

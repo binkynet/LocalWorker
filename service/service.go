@@ -63,6 +63,7 @@ type service struct {
 	workerCancel       func()
 	mqttService        mqtt.Service
 	netManagerClient   *netmanager.Client
+	topicPrefix        string
 }
 
 // NewService creates a Service instance and returns it.
@@ -122,8 +123,10 @@ func (s *service) Run(ctx context.Context) error {
 		s.mutex.Lock()
 		mqttService := s.mqttService
 		netManagerClient := s.netManagerClient
+		topicPrefix := s.topicPrefix
 		s.mqttService = nil
 		s.netManagerClient = nil
+		s.topicPrefix = ""
 		s.mutex.Unlock()
 		if mqttService == nil {
 			return maskAny(fmt.Errorf("MQTT service has not been created"))
@@ -138,7 +141,7 @@ func (s *service) Run(ctx context.Context) error {
 		s.mutex.Lock()
 		s.workerCancel = workerCancel
 		s.mutex.Unlock()
-		err = s.runWorkerInEnvironment(workerCtx, netManagerClient, mqttService)
+		err = s.runWorkerInEnvironment(workerCtx, netManagerClient, mqttService, topicPrefix)
 		workerCancel()
 		if err != nil {
 			s.Log.Error().Err(err).Msg("registerWorker failed")
@@ -153,7 +156,8 @@ func (s *service) Run(ctx context.Context) error {
 }
 
 // Run the worker until the given context is cancelled.
-func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *netmanager.Client, mqttService mqtt.Service) error {
+func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *netmanager.Client,
+	mqttService mqtt.Service, topicPrefix string) error {
 	defer mqttService.Close()
 
 	// Initialization done, run loop
@@ -176,7 +180,10 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 		} else {
 			s.Log.Debug().Interface("config", conf).Msg("received worker config")
 			// Create a new worker using given config
-			w, err := worker.NewService(conf, worker.Dependencies{
+			w, err := worker.NewService(worker.Config{
+				LocalConfiguration: conf,
+				TopicPrefix:        topicPrefix,
+			}, worker.Dependencies{
 				Log:         s.Log.With().Str("component", "worker").Logger(),
 				Bridge:      s.Bridge,
 				MQTTService: mqttService,
@@ -230,6 +237,7 @@ func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvi
 	}
 	s.netManagerClient = netManagerClient
 	s.mqttService = mqttSvc
+	s.topicPrefix = input.Mqtt.TopicPrefix
 
 	if cancel := s.registrationCancel; cancel != nil {
 		cancel()

@@ -18,6 +18,11 @@ type Service interface {
 	Run(ctx context.Context) error
 }
 
+type Config struct {
+	model.LocalConfiguration
+	TopicPrefix string
+}
+
 type Dependencies struct {
 	Log         zerolog.Logger
 	Bridge      bridge.API
@@ -25,7 +30,7 @@ type Dependencies struct {
 }
 
 // NewService instantiates a new Service.
-func NewService(config model.LocalConfiguration, deps Dependencies) (Service, error) {
+func NewService(config Config, deps Dependencies) (Service, error) {
 	return &service{
 		config:       config,
 		Dependencies: deps,
@@ -33,7 +38,7 @@ func NewService(config model.LocalConfiguration, deps Dependencies) (Service, er
 }
 
 type service struct {
-	config model.LocalConfiguration
+	config Config
 	Dependencies
 	devService devices.Service
 	objService objects.Service
@@ -51,7 +56,7 @@ func (s *service) Run(ctx context.Context) error {
 	if err != nil {
 		return maskAny(err)
 	}
-	objService, err := objects.NewService(s.config.Objects)
+	objService, err := objects.NewService(s.config.Objects, s.config.TopicPrefix)
 	if err != nil {
 		return maskAny(err)
 	}
@@ -60,7 +65,6 @@ func (s *service) Run(ctx context.Context) error {
 
 	defer func() {
 		devService.Close()
-		objService.Close()
 	}()
 
 	// Configure devices
@@ -73,7 +77,11 @@ func (s *service) Run(ctx context.Context) error {
 		// Log error
 		s.Log.Error().Err(err).Msg("Not all objects are configured")
 	}
+	// Run objects
+	if err := objService.Run(ctx, s.MQTTService); err != nil {
+		s.Log.Error().Err(err).Msg("Run failed")
+		return maskAny(err)
+	}
 
-	<-ctx.Done()
 	return nil
 }

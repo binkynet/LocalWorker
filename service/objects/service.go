@@ -4,6 +4,7 @@ import (
 	"context"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/mqtt"
@@ -17,23 +18,23 @@ type Service interface {
 	ObjectByID(id string) (Object, bool)
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
-	// Subscribe to all required topics
-	Subscribe(mqttService mqtt.Service) error
-	// Close all subscriptions
-	Close() error
+	// Run all required topics until the given context is cancelled.
+	Run(ctx context.Context, mqttService mqtt.Service) error
 }
 
 type service struct {
 	objects           map[string]Object
 	configuredObjects map[string]Object
+	topicPrefix       string
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(configs []model.Object) (Service, error) {
+func NewService(configs []model.Object, topicPrefix string) (Service, error) {
 	s := &service{
 		objects:           make(map[string]Object),
 		configuredObjects: make(map[string]Object),
+		topicPrefix:       topicPrefix,
 	}
 	for _, c := range configs {
 		var obj Object
@@ -72,14 +73,25 @@ func (s *service) Configure(ctx context.Context) error {
 	return ae.AsError()
 }
 
-// Subscribe to all required topics
-func (s *service) Subscribe(mqttService mqtt.Service) error {
-	// TODO
-	return nil
-}
-
-// Close all subscriptions
-func (s *service) Close() error {
-	// TODO
+// Run all required topics until the given context is cancelled.
+func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
+	g, ctx := errgroup.WithContext(ctx)
+	visitedTypes := make(map[*ObjectType]struct{})
+	for _, obj := range s.configuredObjects {
+		objType := obj.Type()
+		if _, found := visitedTypes[objType]; found {
+			// Type already running
+			continue
+		}
+		g.Go(func() error {
+			if err := objType.Run(ctx, mqttService, s.topicPrefix, s); err != nil {
+				return maskAny(err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
