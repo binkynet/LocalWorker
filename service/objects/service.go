@@ -97,6 +97,15 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 		g, ctx := errgroup.WithContext(ctx)
 		visitedTypes := make(map[*ObjectType]struct{})
 		for _, obj := range s.configuredObjects {
+			// Run the object itself
+			g.Go(func() error {
+				if err := obj.Run(ctx); err != nil {
+					return maskAny(err)
+				}
+				return nil
+			})
+
+			// Run the message loop for the type of object (if not running already)
 			objType := obj.Type()
 			if _, found := visitedTypes[objType]; found {
 				// Type already running

@@ -21,7 +21,7 @@ var (
 				return maskAny(err)
 			}
 			log = log.With().Str("address", msg.Address).Logger()
-			log.Debug().Msg("got message")
+			//log.Debug().Msg("got message")
 			if obj, found := service.ObjectByID(msg.Address); found {
 				if x, ok := obj.(*binaryOutput); ok {
 					if err := x.ProcessMessage(ctx, msg); err != nil {
@@ -87,6 +87,12 @@ func (o *binaryOutput) Configure(ctx context.Context) error {
 	if err := o.outputDevice.SetDirection(ctx, o.pin, devices.PinDirectionOutput); err != nil {
 		return maskAny(err)
 	}
+	return nil
+}
+
+// Run the object until the given context is cancelled.
+func (o *binaryOutput) Run(ctx context.Context) error {
+	// Nothing to do here
 	return nil
 }
 

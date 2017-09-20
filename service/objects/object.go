@@ -15,6 +15,8 @@ type Object interface {
 	Type() *ObjectType
 	// Configure is called once to put the object in the desired state.
 	Configure(ctx context.Context) error
+	// Run the object until the given context is cancelled.
+	Run(ctx context.Context) error
 }
 
 // ObjectType contains the API supported a specific type of object.
