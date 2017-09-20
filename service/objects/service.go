@@ -44,21 +44,24 @@ func NewService(moduleID string, configs []model.Object, topicPrefix string, dev
 	for _, c := range configs {
 		var obj Object
 		var err error
-		id := path.Join(moduleID, c.ID)
+		address := path.Join(moduleID, c.ID)
 		log = log.With().
-			Str("id", id).
+			Str("address", address).
 			Str("type", string(c.Type)).
 			Logger()
+		log.Debug().Msg("creating object...")
 		switch c.Type {
+		case model.ObjectTypeBinarySensor:
+			obj, err = newBinarySensor(address, c, log, devService)
 		case model.ObjectTypeBinaryOutput:
-			obj, err = newBinaryOutput(c, log, devService)
+			obj, err = newBinaryOutput(address, c, log, devService)
 		default:
 			return nil, errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
 		if err != nil {
 			return nil, maskAny(err)
 		}
-		s.objects[id] = obj
+		s.objects[address] = obj
 	}
 	s.log.Debug().Msgf("created %d objects", len(s.objects))
 	return s, nil
@@ -99,7 +102,7 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 		for _, obj := range s.configuredObjects {
 			// Run the object itself
 			g.Go(func() error {
-				if err := obj.Run(ctx); err != nil {
+				if err := obj.Run(ctx, mqttService, s.topicPrefix); err != nil {
 					return maskAny(err)
 				}
 				return nil

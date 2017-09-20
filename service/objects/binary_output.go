@@ -41,12 +41,13 @@ var (
 type binaryOutput struct {
 	log          zerolog.Logger
 	config       model.Object
+	address      string
 	outputDevice devices.GPIO
 	pin          int
 }
 
 // newBinaryOutput creates a new binary-output object for the given configuration.
-func newBinaryOutput(config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinaryOutput(address string, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinaryOutput {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -72,6 +73,7 @@ func newBinaryOutput(config model.Object, log zerolog.Logger, devService devices
 	return &binaryOutput{
 		log:          log,
 		config:       config,
+		address:      address,
 		outputDevice: gpio,
 		pin:          pin,
 	}, nil
@@ -91,7 +93,7 @@ func (o *binaryOutput) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *binaryOutput) Run(ctx context.Context) error {
+func (o *binaryOutput) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
 	// Nothing to do here
 	return nil
 }

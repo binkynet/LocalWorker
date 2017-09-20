@@ -16,7 +16,7 @@ type Object interface {
 	// Configure is called once to put the object in the desired state.
 	Configure(ctx context.Context) error
 	// Run the object until the given context is cancelled.
-	Run(ctx context.Context) error
+	Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error
 }
 
 // ObjectType contains the API supported a specific type of object.
@@ -32,6 +32,9 @@ type ObjectType struct {
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
 func (t *ObjectType) Run(ctx context.Context, log zerolog.Logger, mqttService mqtt.Service, topicPrefix string, service Service) error {
+	if t.NextMessage == nil {
+		return nil
+	}
 	topic := path.Join(topicPrefix, t.TopicSuffix)
 	log = log.With().
 		Str("topic", topic).
