@@ -75,6 +75,15 @@ func (d *mcp23017) Configure(ctx context.Context) error {
 
 // Close brings the device back to a safe state.
 func (d *mcp23017) Close() error {
+	// Restore all to input
+	d.iodir[0] = 0xff
+	d.iodir[1] = 0xff
+	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
+		return maskAny(err)
+	}
+	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
 
