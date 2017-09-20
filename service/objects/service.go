@@ -2,6 +2,7 @@ package objects
 
 import (
 	"context"
+	"path"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
@@ -33,7 +34,7 @@ type service struct {
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(configs []model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, configs []model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		objects:           make(map[string]Object),
 		configuredObjects: make(map[string]Object),
@@ -43,16 +44,21 @@ func NewService(configs []model.Object, topicPrefix string, devService devices.S
 	for _, c := range configs {
 		var obj Object
 		var err error
+		id := path.Join(moduleID, c.ID)
+		log = log.With().
+			Str("id", id).
+			Str("type", string(c.Type)).
+			Logger()
 		switch c.Type {
 		case model.ObjectTypeBinaryOutput:
-			obj, err = newBinaryOutput(c, devService)
+			obj, err = newBinaryOutput(c, log, devService)
 		default:
 			return nil, errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
 		if err != nil {
 			return nil, maskAny(err)
 		}
-		s.objects[c.ID] = obj
+		s.objects[id] = obj
 	}
 	s.log.Debug().Msgf("created %d objects", len(s.objects))
 	return s, nil

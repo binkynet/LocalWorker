@@ -180,9 +180,14 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 		} else {
 			s.Log.Debug().Interface("config", conf).Msg("received worker config")
 			// Create a new worker using given config
+			moduleID := s.hostID
+			if conf.Alias != "" {
+				moduleID = conf.Alias
+			}
 			w, err := worker.NewService(worker.Config{
 				LocalConfiguration: conf,
 				TopicPrefix:        topicPrefix,
+				ModuleID:           moduleID,
 			}, worker.Dependencies{
 				Log:         s.Log.With().Str("component", "worker").Logger(),
 				Bridge:      s.Bridge,

@@ -24,27 +24,31 @@ type ObjectType struct {
 	TopicSuffix string
 	// NextMessage waits for the next message on given subscription
 	// and processes it.
-	NextMessage func(ctx context.Context, subscription mqtt.Subscription, service Service) error
+	NextMessage func(ctx context.Context, log zerolog.Logger, subscription mqtt.Subscription, service Service) error
 }
 
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
 func (t *ObjectType) Run(ctx context.Context, log zerolog.Logger, mqttService mqtt.Service, topicPrefix string, service Service) error {
 	topic := path.Join(topicPrefix, t.TopicSuffix)
+	log = log.With().
+		Str("topic", topic).
+		Logger()
 	subscription, err := mqttService.Subscribe(ctx, topic, mqtt.QosAsLeastOnce)
 	if err != nil {
-		log.Error().Err(err).Str("topic", topic).Msg("Failed to subscribe to MQTT topic")
+		log.Error().Err(err).Msg("Failed to subscribe to MQTT topic")
 		return maskAny(err)
 	}
+	log.Debug().Msg("subscribed to MQTT topic")
 	defer subscription.Close()
 
 	for {
 		// Wait for next message and process it
-		if err := t.NextMessage(ctx, subscription, service); err != nil {
+		if err := t.NextMessage(ctx, log, subscription, service); err != nil {
 			if errors.Cause(err) == context.Canceled {
 				return nil
 			}
-			log.Error().Err(err).Str("topic", topic).Msg("Failed to get next message")
+			log.Error().Err(err).Msg("Failed to get next message")
 			return maskAny(err)
 		}
 	}
