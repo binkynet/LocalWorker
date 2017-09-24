@@ -55,6 +55,8 @@ func NewService(moduleID string, configs []model.Object, topicPrefix string, dev
 			obj, err = newBinarySensor(address, c, log, devService)
 		case model.ObjectTypeBinaryOutput:
 			obj, err = newBinaryOutput(address, c, log, devService)
+		case model.ObjectTypeRelaySwitch:
+			obj, err = newRelaySwitch(address, c, log, devService)
 		default:
 			return nil, errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
