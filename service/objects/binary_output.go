@@ -86,8 +86,10 @@ func (o *binaryOutput) Type() *ObjectType {
 
 // Configure is called once to put the object in the desired state.
 func (o *binaryOutput) Configure(ctx context.Context) error {
-	if err := o.outputDevice.SetDirection(ctx, o.pin, devices.PinDirectionOutput); err != nil {
-		return maskAny(err)
+	for i := 0; i < 5; i++ {
+		if err := o.outputDevice.SetDirection(ctx, o.pin, devices.PinDirectionOutput); err != nil {
+			return maskAny(err)
+		}
 	}
 	return nil
 }

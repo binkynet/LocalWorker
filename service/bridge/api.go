@@ -33,15 +33,17 @@ type API interface {
 
 	// Open the I2C bus
 	I2CBus() (*I2CBus, error)
+
+	Close() error
 }
 
 func TestI2CBus(bus *I2CBus) {
 	for r := byte(0); r <= 0x15; r++ {
 		time.Sleep(time.Millisecond * 50)
-		if v, err := bus.ReadByteBlock(0x20, r, 1); err != nil {
+		if v, err := bus.ReadByteReg(0x20, r); err != nil {
 			fmt.Printf("Cannot read register %2x: %#v\n", r, err)
 		} else {
-			fmt.Printf("Reg %2x == %2x\n", r, v[0])
+			fmt.Printf("Reg %2x == %2x\n", r, v)
 		}
 	}
 }

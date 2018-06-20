@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -42,9 +43,10 @@ type Service interface {
 }
 
 type Config struct {
-	DiscoveryPort int
-	ServerPort    int
-	ServerSecure  bool
+	LocalInterface string
+	DiscoveryPort  int
+	ServerPort     int
+	ServerSecure   bool
 }
 
 type Dependencies struct {
@@ -85,6 +87,8 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 // to register the worker, followed by running the worker loop
 // in a given environment.
 func (s *service) Run(ctx context.Context) error {
+	defer s.Bridge.Close()
+
 	// Create host ID
 	s.Log.Info().Str("id", s.hostID).Msg("Found host ID")
 
@@ -93,14 +97,31 @@ func (s *service) Run(ctx context.Context) error {
 	s.Bridge.BlinkRedLED(time.Millisecond * 250)
 
 	// Open bus
-	bus, err := s.Bridge.I2CBus()
+	var err error
+	/*bus, err := s.Bridge.I2CBus()
 	if err != nil {
 		s.Log.Error().Err(err).Msg("Failed to open I2CBus")
 	} else {
 		// Detect local slaves
-		s.Log.Info().Msg("Detecting local slaves")
+		/*s.Log.Info().Msg("Detecting local slaves")
 		addrs := bus.DetectSlaveAddresses()
 		s.Log.Info().Msgf("Detected %d local slaves: %v", len(addrs), addrs)
+	}*/
+
+	localAddr := ""
+	if s.LocalInterface != "" {
+		lIntf, err := net.InterfaceByName(s.LocalInterface)
+		if err != nil {
+			s.Log.Error().Err(err).Msg("InterfaceByName failed")
+			return maskAny(err)
+		}
+		addrs, err := lIntf.Addrs()
+		if err != nil {
+			s.Log.Error().Err(err).Msg("Interface Addrs failed")
+			return maskAny(err)
+		}
+		localAddr = addrs[0].(*net.IPNet).IP.String()
+		s.Log.Info().Msgf("Using local address: %s", localAddr)
 	}
 
 	for {
@@ -113,7 +134,7 @@ func (s *service) Run(ctx context.Context) error {
 		s.mutex.Lock()
 		s.registrationCancel = registrationCancel
 		s.mutex.Unlock()
-		err = s.registerWorker(registrationCtx, s.hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
+		err = s.registerWorker(registrationCtx, s.hostID, localAddr, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
 		registrationCancel()
 		if err != nil {
 			s.Log.Error().Err(err).Msg("registerWorker failed")

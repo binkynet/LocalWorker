@@ -3,6 +3,7 @@ package objects
 import (
 	"context"
 	"path"
+	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
@@ -58,12 +59,14 @@ func NewService(moduleID string, configs []model.Object, topicPrefix string, dev
 		case model.ObjectTypeRelaySwitch:
 			obj, err = newRelaySwitch(address, c, log, devService)
 		default:
-			return nil, errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
+			err = errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
 		if err != nil {
-			return nil, maskAny(err)
+			log.Error().Err(err).Msg("Failed to create object")
+			//return nil, maskAny(err)
+		} else {
+			s.objects[address] = obj
 		}
-		s.objects[address] = obj
 	}
 	s.log.Debug().Msgf("created %d objects", len(s.objects))
 	return s, nil
@@ -81,6 +84,7 @@ func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
 	configuredObjects := make(map[string]Object)
 	for id, d := range s.objects {
+		time.Sleep(time.Millisecond * 200)
 		if err := d.Configure(ctx); err != nil {
 			s.log.Error().Err(err).Str("id", id).Msg("Failed to configure object")
 			ae.Add(maskAny(err))

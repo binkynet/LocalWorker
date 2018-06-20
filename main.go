@@ -49,8 +49,12 @@ func main() {
 	var serverHost string
 	var serverPort int
 	var discoveryPort int
+	var bridgeType string
+	var localInterface string
 
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
+	pflag.StringVarP(&bridgeType, "bridge", "b", "rpi", "Type of bridge to use (rpi|opz)")
+	pflag.StringVarP(&localInterface, "interface", "i", "", "Name of local network interface to use for Network Manager discovery")
 	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the HTTP server will listen on")
 	pflag.IntVar(&serverPort, "port", defaultServerPort, "Port the HTTP server will listen on")
 	pflag.IntVar(&discoveryPort, "discovery-port", discoveryAPI.DefaultPort, "Port the NetManager discovery is listening on")
@@ -58,15 +62,28 @@ func main() {
 
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
-	bridge, err := bridge.NewOrangePIZeroBridge()
-	if err != nil {
-		Exitf("Failed to initialize Orange Pi Zero Bridge: %v\n", err)
+	var br bridge.API
+	var err error
+	switch bridgeType {
+	case "rpi":
+		br, err = bridge.NewRaspberryPiBridge()
+		if err != nil {
+			Exitf("Failed to initialize Raspberry Pi Bridge: %v\n", err)
+		}
+	case "opz":
+		br, err = bridge.NewOrangePIZeroBridge()
+		if err != nil {
+			Exitf("Failed to initialize Orange Pi Zero Bridge: %v\n", err)
+		}
+	default:
+		Exitf("Unknown bridge type '%s' (rpi|opz)\n", bridgeType)
 	}
 
 	svc, err := service.NewService(service.Config{
-		DiscoveryPort: discoveryPort,
-		ServerPort:    serverPort,
-		ServerSecure:  false,
+		LocalInterface: localInterface,
+		DiscoveryPort:  discoveryPort,
+		ServerPort:     serverPort,
+		ServerSecure:   false,
 	}, service.Dependencies{
 		Log: logger,
 		MqttBuilder: func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error) {
@@ -82,7 +99,7 @@ func main() {
 			}
 			return result, nil
 		},
-		Bridge: bridge,
+		Bridge: br,
 	})
 	if err != nil {
 		Exitf("Failed to initialize Service: %v\n", err)

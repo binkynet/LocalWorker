@@ -64,10 +64,13 @@ func newMcp23017(config model.HWDevice, bus *bridge.I2CBus) (GPIO, error) {
 func (d *mcp23017) Configure(ctx context.Context) error {
 	d.iodir[0] = 0xff
 	d.iodir[1] = 0xff
-	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
+	if err := d.bus.WriteByteReg(d.address, mcp23017RegIOCON, 0x20); err != nil {
 		return maskAny(err)
 	}
-	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
+	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
+		return maskAny(err)
+	}
+	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
 		return maskAny(err)
 	}
 	return nil
@@ -78,10 +81,10 @@ func (d *mcp23017) Close() error {
 	// Restore all to input
 	d.iodir[0] = 0xff
 	d.iodir[1] = 0xff
-	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
+	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
 		return maskAny(err)
 	}
-	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
+	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
 		return maskAny(err)
 	}
 	return nil
@@ -103,7 +106,7 @@ func (d *mcp23017) SetDirection(ctx context.Context, pin int, direction PinDirec
 	} else {
 		d.iodir[regOffset] &= ^mask
 	}
-	if err := d.bus.WriteByte(d.address, mcp23017RegIODIRA+regOffset, d.iodir[regOffset]); err != nil {
+	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA+regOffset, d.iodir[regOffset]); err != nil {
 		return maskAny(err)
 	}
 	return nil
@@ -115,7 +118,7 @@ func (d *mcp23017) GetDirection(ctx context.Context, pin int) (PinDirection, err
 	if err != nil {
 		return PinDirectionInput, maskAny(err)
 	}
-	value, err := d.bus.ReadByte(d.address, mcp23017RegIODIRA+regOffset)
+	value, err := d.bus.ReadByteReg(d.address, mcp23017RegIODIRA+regOffset)
 	if err != nil {
 		return PinDirectionInput, maskAny(err)
 	}
@@ -138,7 +141,7 @@ func (d *mcp23017) Set(ctx context.Context, pin int, value bool) error {
 		} else {
 			d.value[regOffset] &= ^mask
 		}
-		if err := d.bus.WriteByte(d.address, mcp23017RegGPIOA+regOffset, d.value[regOffset]); err != nil {
+		if err := d.bus.WriteByteReg(d.address, mcp23017RegGPIOA+regOffset, d.value[regOffset]); err != nil {
 			return maskAny(err)
 		}
 		return nil
@@ -152,7 +155,7 @@ func (d *mcp23017) Get(ctx context.Context, pin int) (bool, error) {
 	if err != nil {
 		return false, maskAny(err)
 	}
-	value, err := d.bus.ReadByte(d.address, mcp23017RegGPIOA+regOffset)
+	value, err := d.bus.ReadByteReg(d.address, mcp23017RegGPIOA+regOffset)
 	if err != nil {
 		return false, maskAny(err)
 	}

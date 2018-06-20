@@ -20,13 +20,11 @@ import (
 	"time"
 
 	"github.com/ecc1/gpio"
-	"golang.org/x/exp/io/i2c"
 )
 
 const (
 	greenLedPin = 23
 	redLedPin   = 24
-	i2cDev      = "/dev/i2c-1"
 )
 
 type statusLed struct {
@@ -81,9 +79,10 @@ func (l *statusLed) Blink(delay time.Duration) error {
 }
 
 type piBridge struct {
+	mutex    sync.Mutex
 	greenLed statusLed
 	redLed   statusLed
-	devFs    *i2c.Devfs
+	bus      *I2CBus
 }
 
 // NewRaspberryPiBridge implements the bridge for Raspberry PI's
@@ -100,7 +99,6 @@ func NewRaspberryPiBridge() (API, error) {
 	return &piBridge{
 		greenLed: statusLed{pin: greenLed},
 		redLed:   statusLed{pin: redLed},
-		devFs:    &i2c.Devfs{Dev: i2cDev},
 	}, nil
 }
 
@@ -138,9 +136,29 @@ func (p *piBridge) BlinkRedLED(delay time.Duration) error {
 
 // Open the I2C bus
 func (p *piBridge) I2CBus() (*I2CBus, error) {
-	bus, err := Bus(1)
-	if err != nil {
-		return nil, maskAny(err)
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.bus == nil {
+		bus, err := NewI2cDevice("/dev/i2c-1")
+		if err != nil {
+			return nil, maskAny(err)
+		}
+		p.bus = bus
 	}
-	return bus, nil
+	return p.bus, nil
+}
+
+func (p *piBridge) Close() error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	if p.bus != nil {
+		bus := p.bus
+		p.bus = nil
+		if err := bus.Close(); err != nil {
+			return maskAny(err)
+		}
+	}
+	return nil
 }

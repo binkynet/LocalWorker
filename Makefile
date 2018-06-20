@@ -16,7 +16,8 @@ BINNAME := bnLocalWorker
 BIN := $(BINDIR)/$(BINNAME)
 
 GOPATH := $(GOBUILDDIR)
-GOVERSION := 1.9.0-alpine
+GOVERSION := 1.10.3-alpine
+GOCACHEVOL := $(PROJECT)-gocache
 
 ifndef GOOS
 	GOOS := linux
@@ -46,10 +47,16 @@ local:
 	@GOPATH=$(GOPATH) pulsar go flatten -V $(VENDORDIR)
 	@GOPATH=$(GOPATH) pulsar go get $(ORGPATH)/BinkyNet/...
 
-$(BIN): .gobuild $(SOURCES)
+.PHONY: $(GOCACHEVOL)
+$(GOCACHEVOL):
+	docker volume create $(GOCACHEVOL)
+
+$(BIN): .gobuild $(SOURCES) $(GOCACHEVOL)
 	docker run \
 		--rm \
 		-v $(ROOTDIR):/usr/code \
+		-v $(GOCACHEVOL):/usr/cache \
+		-e GOCACHE=/usr/cache \
 		-e GOPATH=/usr/code/.gobuild \
 		-e GOOS=$(GOOS) \
 		-e GOARCH=$(GOARCH) \

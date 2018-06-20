@@ -19,6 +19,7 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"runtime"
 	"sort"
@@ -29,9 +30,15 @@ import (
 )
 
 // Run the worker until the given context is cancelled.
-func (s *service) registerWorker(ctx context.Context, hostID string, discoveryPort, httpPort int, httpSecure bool) error {
+func (s *service) registerWorker(ctx context.Context, hostID, localAddr string, discoveryPort, httpPort int, httpSecure bool) error {
 	broadcastIP := net.IPv4(255, 255, 255, 255)
-	socket, err := net.DialUDP("udp4", nil, &net.UDPAddr{
+	var localUDPAddr *net.UDPAddr
+	if localAddr != "" {
+		localUDPAddr = &net.UDPAddr{
+			IP: net.ParseIP(localAddr),
+		}
+	}
+	socket, err := net.DialUDP("udp4", localUDPAddr, &net.UDPAddr{
 		IP:   broadcastIP,
 		Port: discoveryPort,
 	})
@@ -66,15 +73,25 @@ func (s *service) registerWorker(ctx context.Context, hostID string, discoveryPo
 
 // create a host ID based on network hardware addresses.
 func createHostID() (string, error) {
+	if content, err := ioutil.ReadFile("/etc/machine-id"); err == nil {
+		content = []byte(strings.TrimSpace(string(content)))
+		id := fmt.Sprintf("%x", sha1.Sum(content))
+		return id[:10], nil
+	}
+
 	ifs, err := net.Interfaces()
 	if err != nil {
 		return "", maskAny(err)
 	}
 	list := make([]string, 0, len(ifs))
 	for _, v := range ifs {
-		h := v.HardwareAddr.String()
-		if len(h) > 0 {
-			list = append(list, h)
+		f := v.Flags
+		if f&net.FlagUp != 0 && f&net.FlagLoopback == 0 {
+			fmt.Printf("Using intf %s with addr %s\n", v.Name, v.HardwareAddr.String())
+			h := v.HardwareAddr.String()
+			if len(h) > 0 {
+				list = append(list, h)
+			}
 		}
 	}
 	sort.Strings(list) // sort host IDs
