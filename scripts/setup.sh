@@ -6,13 +6,16 @@ echo "${USER} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${USER}
 sudo chmod 0440 /etc/sudoers.d/${USER}
 sudo usermod -aG i2c ${USER}
 
+sudo apt-get update
+sudo apt-get install python-smbus i2c-tools
+
 # Download worker binary
 sudo mkdir -p /opt/binky
 sudo chown ${USER} /opt/binky/
 # TODO make release available
 
 # Create worker service
-cat >/etc/systemd/system/bnLocalWorker.service <<EOF
+cat | sudo tee /etc/systemd/system/bnLocalWorker.service <<EOF
 [Unit]
 Description=bnLocalWorker
 

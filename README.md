@@ -36,21 +36,8 @@ i2c-dev
 
 ## Generic Configuration
 
-Add current user to i2c group
+Run setup:
 
 ```bash
-sudo adduser ${USER} i2c
-```
-
-Optionally install these tools:
-
-```bash
-sudo apt-get update
-sudo apt-get install python-smbus i2c-tools
-```
-
-## Run local worker
-
-```bash
-./bnLocalWorker -b opz|rpi
+curl https://raw.githubusercontent.com/binkynet/LocalWorker/master/scripts/setup.sh | bash
 ```
