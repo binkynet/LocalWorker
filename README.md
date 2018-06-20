@@ -52,5 +52,5 @@ sudo apt-get install python-smbus i2c-tools
 ## Run local worker
 
 ```bash
-./bnLocalWorker -b opz|rpi [-i ethX]
+./bnLocalWorker -b opz|rpi
 ```

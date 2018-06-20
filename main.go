@@ -50,11 +50,9 @@ func main() {
 	var serverPort int
 	var discoveryPort int
 	var bridgeType string
-	var localInterface string
 
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
 	pflag.StringVarP(&bridgeType, "bridge", "b", "rpi", "Type of bridge to use (rpi|opz)")
-	pflag.StringVarP(&localInterface, "interface", "i", "", "Name of local network interface to use for Network Manager discovery")
 	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the HTTP server will listen on")
 	pflag.IntVar(&serverPort, "port", defaultServerPort, "Port the HTTP server will listen on")
 	pflag.IntVar(&discoveryPort, "discovery-port", discoveryAPI.DefaultPort, "Port the NetManager discovery is listening on")
@@ -80,10 +78,9 @@ func main() {
 	}
 
 	svc, err := service.NewService(service.Config{
-		LocalInterface: localInterface,
-		DiscoveryPort:  discoveryPort,
-		ServerPort:     serverPort,
-		ServerSecure:   false,
+		DiscoveryPort: discoveryPort,
+		ServerPort:    serverPort,
+		ServerSecure:  false,
 	}, service.Dependencies{
 		Log: logger,
 		MqttBuilder: func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error) {

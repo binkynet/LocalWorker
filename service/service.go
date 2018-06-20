@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
@@ -43,10 +42,9 @@ type Service interface {
 }
 
 type Config struct {
-	LocalInterface string
-	DiscoveryPort  int
-	ServerPort     int
-	ServerSecure   bool
+	DiscoveryPort int
+	ServerPort    int
+	ServerSecure  bool
 }
 
 type Dependencies struct {
@@ -108,22 +106,6 @@ func (s *service) Run(ctx context.Context) error {
 		s.Log.Info().Msgf("Detected %d local slaves: %v", len(addrs), addrs)
 	}*/
 
-	localAddr := ""
-	if s.LocalInterface != "" {
-		lIntf, err := net.InterfaceByName(s.LocalInterface)
-		if err != nil {
-			s.Log.Error().Err(err).Msg("InterfaceByName failed")
-			return maskAny(err)
-		}
-		addrs, err := lIntf.Addrs()
-		if err != nil {
-			s.Log.Error().Err(err).Msg("Interface Addrs failed")
-			return maskAny(err)
-		}
-		localAddr = addrs[0].(*net.IPNet).IP.String()
-		s.Log.Info().Msgf("Using local address: %s", localAddr)
-	}
-
 	for {
 		// Register worker
 		s.Bridge.BlinkGreenLED(time.Millisecond * 250)
@@ -134,7 +116,7 @@ func (s *service) Run(ctx context.Context) error {
 		s.mutex.Lock()
 		s.registrationCancel = registrationCancel
 		s.mutex.Unlock()
-		err = s.registerWorker(registrationCtx, s.hostID, localAddr, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
+		err = s.registerWorker(registrationCtx, s.hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
 		registrationCancel()
 		if err != nil {
 			s.Log.Error().Err(err).Msg("registerWorker failed")
