@@ -238,6 +238,7 @@ func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvi
 		return maskAny(restkit.InternalServerError(err.Error(), 0))
 	}
 
+	log.Debug().Msg("creating random MQTT client ID")
 	buf := make([]byte, 8)
 	rand.Read(buf)
 	clientID := fmt.Sprintf("%s_%x", s.hostID, buf)
