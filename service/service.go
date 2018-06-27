@@ -221,23 +221,30 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 
 // Called to relay environment information.
 func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error {
-	s.Log.Info().Msg("Environment called")
+	log := s.Log.With().
+		Str("endpoint", input.Manager.Endpoint).
+		Str("mqtt-host", input.Mqtt.Host).
+		Int("mqtt-port", input.Mqtt.Port).
+		Logger()
+	log.Info().Msg("Environment called")
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	log.Debug().Msg("creating network manager client")
 	netManagerClient, err := netmanager.NewClient(input.Manager.Endpoint)
 	if err != nil {
-		s.Log.Error().Err(err).Msg("Failed to create MQTT service")
+		log.Error().Err(err).Msg("Failed to create MQTT service")
 		return maskAny(restkit.InternalServerError(err.Error(), 0))
 	}
 
 	buf := make([]byte, 8)
 	rand.Read(buf)
 	clientID := fmt.Sprintf("%s_%x", s.hostID, buf)
+	log.Debug().Str("client-id", clientID).Msg("creating MQTT service")
 	mqttSvc, err := s.MqttBuilder(input, clientID)
 	if err != nil {
-		s.Log.Error().Err(err).Msg("Failed to create MQTT service")
+		log.Error().Err(err).Msg("Failed to create MQTT service")
 		return maskAny(restkit.InternalServerError(err.Error(), 0))
 	}
 	if s.mqttService != nil {
@@ -248,6 +255,7 @@ func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvi
 	s.topicPrefix = input.Mqtt.TopicPrefix
 
 	if cancel := s.registrationCancel; cancel != nil {
+		log.Debug().Msg("Canceling registration")
 		cancel()
 	}
 	return nil
