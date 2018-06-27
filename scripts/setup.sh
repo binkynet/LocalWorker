@@ -1,13 +1,14 @@
 #!/bin/bash
 
+# Updates & install
+sudo apt-get update -y
+sudo apt-get install -y python-smbus i2c-tools
+
 # Setup access rights
 sudo usermod -aG sudo ${USER}
 echo "${USER} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/${USER}
 sudo chmod 0440 /etc/sudoers.d/${USER}
 sudo usermod -aG i2c ${USER}
-
-sudo apt-get update -y
-sudo apt-get install -y python-smbus i2c-tools
 
 # Download worker binary
 sudo mkdir -p /opt/binky
