@@ -10,7 +10,7 @@ import (
 )
 
 type mcp23017 struct {
-	config  model.HWDevice
+	config  model.Device
 	bus     *bridge.I2CBus
 	address byte
 	iodir   []byte
@@ -43,8 +43,8 @@ const (
 )
 
 // newMcp23017 creates a GPIO instance for a mcp23017 device with given config.
-func newMcp23017(config model.HWDevice, bus *bridge.I2CBus) (GPIO, error) {
-	if config.Type != model.HWDeviceTypeMCP23017 {
+func newMcp23017(config model.Device, bus *bridge.I2CBus) (GPIO, error) {
+	if config.Type != model.DeviceTypeMCP23017 {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid device type '%s'", string(config.Type))
 	}
 	address, err := parseAddress(config.Address)
@@ -91,12 +91,12 @@ func (d *mcp23017) Close() error {
 }
 
 // PinCount returns the number of pins of the device
-func (d *mcp23017) PinCount() int {
+func (d *mcp23017) PinCount() uint {
 	return 16
 }
 
 // Set the direction of the pin at given index (1...)
-func (d *mcp23017) SetDirection(ctx context.Context, pin int, direction PinDirection) error {
+func (d *mcp23017) SetDirection(ctx context.Context, pin model.DeviceIndex, direction PinDirection) error {
 	mask, regOffset, err := d.bitMask(pin)
 	if err != nil {
 		return maskAny(err)
@@ -113,7 +113,7 @@ func (d *mcp23017) SetDirection(ctx context.Context, pin int, direction PinDirec
 }
 
 // Get the direction of the pin at given index (1...)
-func (d *mcp23017) GetDirection(ctx context.Context, pin int) (PinDirection, error) {
+func (d *mcp23017) GetDirection(ctx context.Context, pin model.DeviceIndex) (PinDirection, error) {
 	mask, regOffset, err := d.bitMask(pin)
 	if err != nil {
 		return PinDirectionInput, maskAny(err)
@@ -129,7 +129,7 @@ func (d *mcp23017) GetDirection(ctx context.Context, pin int) (PinDirection, err
 }
 
 // Set the pin at given index (1...) to the given value
-func (d *mcp23017) Set(ctx context.Context, pin int, value bool) error {
+func (d *mcp23017) Set(ctx context.Context, pin model.DeviceIndex, value bool) error {
 	mask, regOffset, err := d.bitMask(pin)
 	if err != nil {
 		return maskAny(err)
@@ -150,7 +150,7 @@ func (d *mcp23017) Set(ctx context.Context, pin int, value bool) error {
 }
 
 // Set the pin at given index (1...)
-func (d *mcp23017) Get(ctx context.Context, pin int) (bool, error) {
+func (d *mcp23017) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
 	mask, regOffset, err := d.bitMask(pin)
 	if err != nil {
 		return false, maskAny(err)
@@ -164,7 +164,7 @@ func (d *mcp23017) Get(ctx context.Context, pin int) (bool, error) {
 
 // bitMask calculates a bit map (bit set for the given pin) and the corresponding
 // register offset (0, 1)
-func (d *mcp23017) bitMask(pin int) (mask, regOffset byte, err error) {
+func (d *mcp23017) bitMask(pin model.DeviceIndex) (mask, regOffset byte, err error) {
 	if pin < 1 || pin > 16 {
 		return 0, 0, errors.Wrapf(InvalidPinError, "Pin must be between 1 and 16, got %d", pin)
 	}

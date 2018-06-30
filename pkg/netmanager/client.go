@@ -26,10 +26,10 @@ func NewClient(endpoint string) (*Client, error) {
 }
 
 // GetWorkerConfig requests the local worker configuration for a worker with given id.
-func (c *Client) GetWorkerConfig(ctx context.Context, workerID string) (model.LocalConfiguration, error) {
-	var result model.LocalConfiguration
+func (c *Client) GetWorkerConfig(ctx context.Context, workerID string) (model.LocalWorkerConfig, error) {
+	var result model.LocalWorkerConfig
 	if err := c.c.Request("GET", path.Join("worker", workerID, "config"), nil, nil, &result); err != nil {
-		return model.LocalConfiguration{}, maskAny(err)
+		return model.LocalWorkerConfig{}, maskAny(err)
 	}
 	return result, nil
 }

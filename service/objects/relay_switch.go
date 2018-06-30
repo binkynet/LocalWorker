@@ -21,7 +21,7 @@ type relaySwitch struct {
 	mutex            sync.Mutex
 	log              zerolog.Logger
 	config           model.Object
-	address          string
+	address          mq.ObjectAddress
 	straight         relaySwitchDirection
 	off              relaySwitchDirection
 	disableAllNeeded bool
@@ -30,7 +30,7 @@ type relaySwitch struct {
 
 type relaySwitchDirection struct {
 	device devices.GPIO
-	pin    int
+	pin    model.DeviceIndex
 }
 
 func (rsd relaySwitchDirection) activateRelay(ctx context.Context) error {
@@ -48,32 +48,32 @@ func (rsd relaySwitchDirection) deactivateRelay(ctx context.Context) error {
 }
 
 // newRelaySwitch creates a new relay-switch object for the given configuration.
-func newRelaySwitch(address string, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newRelaySwitch(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeRelaySwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
-	straightPin, err := getSinglePin(config, model.PinNameStraightRelay)
+	straightPin, err := getSinglePin(oid, config, model.ConnectionNameStraightRelay)
 	if err != nil {
 		return nil, maskAny(err)
 	}
 	straightDev, err := getGPIOForPin(straightPin, devService)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.PinNameStraightRelay, config.ID)
+		return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
 	}
-	offPin, err := getSinglePin(config, model.PinNameOffRelay)
+	offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
 	if err != nil {
 		return nil, maskAny(err)
 	}
 	offDev, err := getGPIOForPin(offPin, devService)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.PinNameOffRelay, config.ID)
+		return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNameOffRelay, oid)
 	}
 	return &relaySwitch{
 		log:      log,
 		config:   config,
 		address:  address,
-		straight: relaySwitchDirection{straightDev, straightPin.Pin},
-		off:      relaySwitchDirection{offDev, offPin.Pin},
+		straight: relaySwitchDirection{straightDev, straightPin.Index},
+		off:      relaySwitchDirection{offDev, offPin.Index},
 	}, nil
 }
 

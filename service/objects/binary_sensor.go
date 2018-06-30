@@ -23,34 +23,34 @@ var (
 type binarySensor struct {
 	log         zerolog.Logger
 	config      model.Object
-	address     string
+	address     mq.ObjectAddress
 	inputDevice devices.GPIO
-	pin         int
+	pin         model.DeviceIndex
 }
 
 // newBinarySensor creates a new binary-sensor object for the given configuration.
-func newBinarySensor(address string, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinarySensor(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinarySensor {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
-	pins, ok := config.Pins[model.PinNameSensor]
+	pins, ok := config.Connections[model.ConnectionNameSensor]
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' not found in object '%s'", model.PinNameSensor, config.ID)
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' not found in object '%s'", model.ConnectionNameSensor, oid)
 	}
 	if len(pins) != 1 {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' must have 1 pin in object '%s', got %d", model.PinNameSensor, config.ID, len(pins))
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' must have 1 pin in object '%s', got %d", model.ConnectionNameSensor, oid, len(pins))
 	}
 	device, ok := devService.DeviceByID(pins[0].DeviceID)
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found in object '%s'", pins[0].DeviceID, config.ID)
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found in object '%s'", pins[0].DeviceID, oid)
 	}
 	gpio, ok := device.(devices.GPIO)
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Device '%s' in object '%s' is not a GPIO", pins[0].DeviceID, config.ID)
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' in object '%s' is not a GPIO", pins[0].DeviceID, oid)
 	}
-	pin := pins[0].Pin
-	if pin < 1 || pin > gpio.PinCount() {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.PinNameSensor, config.ID, pin, gpio.PinCount())
+	pin := pins[0].Index
+	if pin < 1 || uint(pin) > gpio.PinCount() {
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, gpio.PinCount())
 	}
 	return &binarySensor{
 		log:         log,

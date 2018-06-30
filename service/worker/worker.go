@@ -19,7 +19,7 @@ type Service interface {
 }
 
 type Config struct {
-	model.LocalConfiguration
+	model.LocalWorkerConfig
 	TopicPrefix string
 	ModuleID    string
 }

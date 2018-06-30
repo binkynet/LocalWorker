@@ -18,9 +18,9 @@ var (
 				log.Debug().Err(err).Msg("NextMsg failed")
 				return maskAny(err)
 			}
-			log = log.With().Str("address", msg.Address).Logger()
+			log = log.With().Str("address", string(msg.Address)).Logger()
 			//log.Debug().Msg("got message")
-			if obj, found := service.ObjectByID(msg.Address); found {
+			if obj, found := service.ObjectByAddress(msg.Address); found {
 				if x, ok := obj.(switchAPI); ok {
 					if err := x.ProcessMessage(ctx, msg); err != nil {
 						return maskAny(err)
