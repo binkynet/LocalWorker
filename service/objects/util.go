@@ -39,3 +39,39 @@ func getGPIOForPin(pin model.DevicePin, devService devices.Service) (devices.GPI
 	}
 	return gpio, nil
 }
+
+// getPWMForPin looks up the device for the given pin.
+// If device not found, an error is returned.
+// If device is not a PWM, an error is returned.
+// If pin is not in pin-range of device, an error is returned.
+func getPWMForPin(pin model.DevicePin, devService devices.Service) (devices.PWM, error) {
+	device, ok := devService.DeviceByID(pin.DeviceID)
+	if !ok {
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found", pin.DeviceID)
+	}
+	pwm, ok := device.(devices.PWM)
+	if !ok {
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' is not a PWM", pin.DeviceID)
+	}
+	pinNr := pin.Index
+	if pinNr < 1 || int(pinNr) > pwm.OutputCount() {
+		return nil, errors.Wrapf(model.ValidationError, "Pin %d is out of range for device '%s'", pinNr, pin.DeviceID)
+	}
+	return pwm, nil
+}
+
+// absInt returns the absolute value of the given int.
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// minInt returns the minimum of the given integers.
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

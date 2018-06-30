@@ -40,7 +40,7 @@ func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicP
 		objects:           make(map[mq.ObjectAddress]Object),
 		configuredObjects: make(map[mq.ObjectAddress]Object),
 		topicPrefix:       topicPrefix,
-		log:               log,
+		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for id, c := range configs {
 		var obj Object
@@ -58,6 +58,8 @@ func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicP
 			obj, err = newBinaryOutput(id, address, c, log, devService)
 		case model.ObjectTypeRelaySwitch:
 			obj, err = newRelaySwitch(id, address, c, log, devService)
+		case model.ObjectTypeServoSwitch:
+			obj, err = newServoSwitch(id, address, c, log, devService)
 		default:
 			err = errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}

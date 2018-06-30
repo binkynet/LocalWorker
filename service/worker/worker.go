@@ -55,7 +55,7 @@ func (s *service) Run(ctx context.Context) error {
 	}
 	// Build devices service
 	s.Log.Debug().Msg("build devices service")
-	devService, err := devices.NewService(s.config.Devices, bus)
+	devService, err := devices.NewService(s.config.Devices, bus, s.Log)
 	if err != nil {
 		return maskAny(err)
 	}
