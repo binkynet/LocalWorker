@@ -1,4 +1,4 @@
-//    Copyright 2017 Ewout Prangsma
+//    Copyright 2018 Ewout Prangsma
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import (
 
 	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
 
+	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/mqtt"
@@ -51,14 +52,15 @@ func main() {
 	var discoveryPort int
 	var bridgeType string
 
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+	defaultBridgeType := environment.AutoDetectBridgeType(logger)
+
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
-	pflag.StringVarP(&bridgeType, "bridge", "b", "rpi", "Type of bridge to use (rpi|opz)")
+	pflag.StringVarP(&bridgeType, "bridge", "b", defaultBridgeType, "Type of bridge to use (rpi|opz)")
 	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the HTTP server will listen on")
 	pflag.IntVar(&serverPort, "port", defaultServerPort, "Port the HTTP server will listen on")
 	pflag.IntVar(&discoveryPort, "discovery-port", discoveryAPI.DefaultPort, "Port the NetManager discovery is listening on")
 	pflag.Parse()
-
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
 	var br bridge.API
 	var err error
