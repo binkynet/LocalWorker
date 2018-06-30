@@ -1,6 +1,10 @@
 package devices
 
-import "context"
+import (
+	"context"
+
+	"github.com/binkynet/BinkyNet/model"
+)
 
 // PWM contains the API that is supported by all pulse width modulation devices.
 type PWM interface {
@@ -10,8 +14,8 @@ type PWM interface {
 	// MaxValue returns the maximum valid value for onValue or offValue.
 	MaxValue() int
 	// Set the output at given index (1...) to the given value
-	Set(ctx context.Context, output int, onValue, offValue int) error
+	Set(ctx context.Context, output model.DeviceIndex, onValue, offValue int) error
 	// Get the output at given index (1...)
 	// Returns onValue,offValue,error
-	Get(ctx context.Context, output int) (int, int, error)
+	Get(ctx context.Context, output model.DeviceIndex) (int, int, error)
 }
