@@ -4,6 +4,8 @@ import (
 	"context"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/bridge"
@@ -22,14 +24,16 @@ type Service interface {
 }
 
 type service struct {
+	log               zerolog.Logger
 	devices           map[string]Device
 	configuredDevices map[string]Device
 }
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(configs []model.HWDevice, bus *bridge.I2CBus) (Service, error) {
+func NewService(configs []model.HWDevice, bus *bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
+		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[string]Device),
 		configuredDevices: make(map[string]Device),
 	}
@@ -39,6 +43,8 @@ func NewService(configs []model.HWDevice, bus *bridge.I2CBus) (Service, error) {
 		switch c.Type {
 		case model.HWDeviceTypeMCP23017:
 			dev, err = newMcp23017(c, bus)
+		case model.HWDeviceTypePCA9685:
+			dev, err = newPCA9685(c, bus)
 		default:
 			return nil, errors.Wrapf(model.ValidationError, "Unsupported device type '%s'", c.Type)
 		}
@@ -62,13 +68,21 @@ func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
 	configuredDevices := make(map[string]Device)
 	for id, d := range s.devices {
+		log.Debug().
+			Str("id", id).
+			Msg("Configuring device")
 		if err := d.Configure(ctx); err != nil {
+			log.Warn().
+				Err(err).
+				Str("id", id).
+				Msg("Failed to configure device")
 			ae.Add(maskAny(err))
 		} else {
 			configuredDevices[id] = d
 		}
 	}
 	s.configuredDevices = configuredDevices
+	log.Info().Int("count", len(configuredDevices)).Msg("Configured devices")
 	return ae.AsError()
 }
 

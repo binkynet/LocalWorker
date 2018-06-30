@@ -40,7 +40,7 @@ func NewService(moduleID string, configs []model.Object, topicPrefix string, dev
 		objects:           make(map[string]Object),
 		configuredObjects: make(map[string]Object),
 		topicPrefix:       topicPrefix,
-		log:               log,
+		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for _, c := range configs {
 		var obj Object
