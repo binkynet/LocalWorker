@@ -20,9 +20,9 @@ var (
 				log.Debug().Err(err).Msg("NextMsg failed")
 				return maskAny(err)
 			}
-			log = log.With().Str("address", msg.Address).Logger()
+			log = log.With().Str("address", string(msg.Address)).Logger()
 			//log.Debug().Msg("got message")
-			if obj, found := service.ObjectByID(msg.Address); found {
+			if obj, found := service.ObjectByAddress(msg.Address); found {
 				if x, ok := obj.(*binaryOutput); ok {
 					if err := x.ProcessMessage(ctx, msg); err != nil {
 						return maskAny(err)
@@ -41,34 +41,34 @@ var (
 type binaryOutput struct {
 	log          zerolog.Logger
 	config       model.Object
-	address      string
+	address      mq.ObjectAddress
 	outputDevice devices.GPIO
-	pin          int
+	pin          model.DeviceIndex
 }
 
 // newBinaryOutput creates a new binary-output object for the given configuration.
-func newBinaryOutput(address string, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinaryOutput(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinaryOutput {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
-	pins, ok := config.Pins[model.PinNameOutput]
+	pins, ok := config.Connections[model.ConnectionNameOutput]
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' not found in object '%s'", model.PinNameOutput, config.ID)
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' not found in object '%s'", model.ConnectionNameOutput, oid)
 	}
 	if len(pins) != 1 {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' must have 1 pin in object '%s', got %d", model.PinNameOutput, config.ID, len(pins))
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' must have 1 pin in object '%s', got %d", model.ConnectionNameOutput, oid, len(pins))
 	}
 	device, ok := devService.DeviceByID(pins[0].DeviceID)
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found in object '%s'", pins[0].DeviceID, config.ID)
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found in object '%s'", pins[0].DeviceID, oid)
 	}
 	gpio, ok := device.(devices.GPIO)
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Device '%s' in object '%s' is not a GPIO", pins[0].DeviceID, config.ID)
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' in object '%s' is not a GPIO", pins[0].DeviceID, oid)
 	}
-	pin := pins[0].Pin
-	if pin < 1 || pin > gpio.PinCount() {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.PinNameOutput, config.ID, pin, gpio.PinCount())
+	pin := pins[0].Index
+	if pin < 1 || uint(pin) > gpio.PinCount() {
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameOutput, oid, pin, gpio.PinCount())
 	}
 	return &binaryOutput{
 		log:          log,

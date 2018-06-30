@@ -2,7 +2,6 @@ package objects
 
 import (
 	"context"
-	"path"
 	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
@@ -10,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/model"
+	"github.com/binkynet/BinkyNet/mq"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
@@ -17,9 +17,9 @@ import (
 
 // Service contains the API that is exposed by the object service.
 type Service interface {
-	// ObjectByID returns the object with given ID.
+	// ObjectByAddress returns the object with given address.
 	// Return false if not found
-	ObjectByID(id string) (Object, bool)
+	ObjectByAddress(address mq.ObjectAddress) (Object, bool)
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
@@ -27,37 +27,37 @@ type Service interface {
 }
 
 type service struct {
-	objects           map[string]Object
-	configuredObjects map[string]Object
+	objects           map[mq.ObjectAddress]Object
+	configuredObjects map[mq.ObjectAddress]Object
 	topicPrefix       string
 	log               zerolog.Logger
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, configs []model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
-		objects:           make(map[string]Object),
-		configuredObjects: make(map[string]Object),
+		objects:           make(map[mq.ObjectAddress]Object),
+		configuredObjects: make(map[mq.ObjectAddress]Object),
 		topicPrefix:       topicPrefix,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
-	for _, c := range configs {
+	for id, c := range configs {
 		var obj Object
 		var err error
-		address := path.Join(moduleID, c.ID)
+		address := mq.JoinModuleLocal(moduleID, string(id))
 		log = log.With().
-			Str("address", address).
+			Str("address", string(address)).
 			Str("type", string(c.Type)).
 			Logger()
 		log.Debug().Msg("creating object...")
 		switch c.Type {
 		case model.ObjectTypeBinarySensor:
-			obj, err = newBinarySensor(address, c, log, devService)
+			obj, err = newBinarySensor(id, address, c, log, devService)
 		case model.ObjectTypeBinaryOutput:
-			obj, err = newBinaryOutput(address, c, log, devService)
+			obj, err = newBinaryOutput(id, address, c, log, devService)
 		case model.ObjectTypeRelaySwitch:
-			obj, err = newRelaySwitch(address, c, log, devService)
+			obj, err = newRelaySwitch(id, address, c, log, devService)
 		default:
 			err = errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
@@ -72,25 +72,25 @@ func NewService(moduleID string, configs []model.Object, topicPrefix string, dev
 	return s, nil
 }
 
-// ObjectByID returns the object with given ID.
+// ObjectByAddress returns the object with given object address.
 // Return false if not found or not configured.
-func (s *service) ObjectByID(id string) (Object, bool) {
-	dev, ok := s.configuredObjects[id]
+func (s *service) ObjectByAddress(address mq.ObjectAddress) (Object, bool) {
+	dev, ok := s.configuredObjects[address]
 	return dev, ok
 }
 
 // Configure is called once to put all objects in the desired state.
 func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
-	configuredObjects := make(map[string]Object)
-	for id, d := range s.objects {
+	configuredObjects := make(map[mq.ObjectAddress]Object)
+	for addr, d := range s.objects {
 		time.Sleep(time.Millisecond * 200)
 		if err := d.Configure(ctx); err != nil {
-			s.log.Error().Err(err).Str("id", id).Msg("Failed to configure object")
+			s.log.Error().Err(err).Str("address", string(addr)).Msg("Failed to configure object")
 			ae.Add(maskAny(err))
 		} else {
-			s.log.Debug().Str("id", id).Msg("configured object")
-			configuredObjects[id] = d
+			s.log.Debug().Str("address", string(addr)).Msg("configured object")
+			configuredObjects[addr] = d
 		}
 	}
 	s.configuredObjects = configuredObjects
