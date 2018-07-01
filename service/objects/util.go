@@ -9,15 +9,15 @@ import (
 // getSinglePin looks up the pin with given name in the given configurable.
 // If not found, an error is returned.
 // If multiple pins are found, an error is returned.
-func getSinglePin(oid model.ObjectID, config model.Object, connectionName model.ConnectionName) (model.DevicePin, error) {
-	pins, ok := config.Connections[connectionName]
+func getSinglePin(oid model.ObjectID, config model.Object, connectionName model.ConnectionName) (model.Connection, model.DevicePin, error) {
+	conn, ok := config.Connections[connectionName]
 	if !ok {
-		return model.DevicePin{}, errors.Wrapf(model.ValidationError, "Connection '%s' not found in object '%s'", connectionName, oid)
+		return model.Connection{}, model.DevicePin{}, errors.Wrapf(model.ValidationError, "Connection '%s' not found in object '%s'", connectionName, oid)
 	}
-	if len(pins) != 1 {
-		return model.DevicePin{}, errors.Wrapf(model.ValidationError, "Connection '%s' must have 1 pin in object '%s', got %d", connectionName, oid, len(pins))
+	if len(conn.Pins) != 1 {
+		return model.Connection{}, model.DevicePin{}, errors.Wrapf(model.ValidationError, "Connection '%s' must have 1 pin in object '%s', got %d", connectionName, oid, len(conn.Pins))
 	}
-	return pins[0], nil
+	return conn, conn.Pins[0], nil
 }
 
 // getGPIOForPin looks up the device for the given pin.

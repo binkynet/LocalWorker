@@ -40,11 +40,13 @@ type servoSwitch struct {
 	config  model.Object
 	address mqp.ObjectAddress
 	servo   struct {
-		device devices.PWM
-		index  model.DeviceIndex
+		device     devices.PWM
+		index      model.DeviceIndex
+		straightPL int
+		offPL      int
 	}
-	currentAngle int
-	targetAngle  int
+	currentPL int
+	targetPL  int
 }
 
 // newServoSwitch creates a new servo-switch object for the given configuration.
@@ -52,7 +54,7 @@ func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 	if config.Type != model.ObjectTypeServoSwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
-	servoPin, err := getSinglePin(oid, config, model.ConnectionNameServo)
+	servoConn, servoPin, err := getSinglePin(oid, config, model.ConnectionNameServo)
 	if err != nil {
 		return nil, maskAny(err)
 	}
@@ -60,15 +62,19 @@ func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 	if err != nil {
 		return nil, errors.Wrapf(err, "%s: (connection %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
 	}
+	straightPL := servoConn.GetIntConfig("straight", 150)
+	offPL := servoConn.GetIntConfig("off", 550)
 	sw := &servoSwitch{
-		log:          log,
-		config:       config,
-		address:      address,
-		currentAngle: 80,
-		targetAngle:  90,
+		log:       log,
+		config:    config,
+		address:   address,
+		currentPL: offPL,
+		targetPL:  straightPL,
 	}
 	sw.servo.device = servoDev
 	sw.servo.index = servoPin.Index
+	sw.servo.straightPL = straightPL
+	sw.servo.offPL = offPL
 	return sw, nil
 }
 
@@ -79,11 +85,10 @@ func (o *servoSwitch) Type() *ObjectType {
 
 // Configure is called once to put the object in the desired state.
 func (o *servoSwitch) Configure(ctx context.Context) error {
-	o.targetAngle = 0
-	o.currentAngle = 0
+	o.targetPL = o.servo.straightPL
+	o.currentPL = o.servo.straightPL
 
-	onValue, offValue := o.angleToOnOffValues(o.currentAngle, o.servo.device.MaxValue())
-	if err := o.servo.device.Set(ctx, o.servo.index, onValue, offValue); err != nil {
+	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.servo.straightPL); err != nil {
 		return maskAny(err)
 	}
 	return nil
@@ -92,25 +97,23 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 // Run the object until the given context is cancelled.
 func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
 	for {
-		targetAngle := o.targetAngle
-		if targetAngle != o.currentAngle {
-			// Make current angle closer to target angle
-			step := minInt(2, absInt(targetAngle-o.currentAngle))
-			var nextAngle int
-			if o.currentAngle < targetAngle {
-				nextAngle = o.currentAngle + step
+		targetPL := o.targetPL
+		if targetPL != o.currentPL {
+			// Make current pulse length closer to target pulse length
+			step := minInt(2, absInt(targetPL-o.currentPL))
+			var nextPL int
+			if o.currentPL < targetPL {
+				nextPL = o.currentPL + step
 			} else {
-				nextAngle = o.currentAngle - step
+				nextPL = o.currentPL - step
 			}
-			onValue, offValue := o.angleToOnOffValues(nextAngle, o.servo.device.MaxValue())
 			o.log.Debug().
-				Int("on", onValue).
-				Int("off", offValue).
+				Int("pulse", nextPL).
 				Msg("Set servo")
-			if err := o.servo.device.Set(ctx, o.servo.index, onValue, offValue); err != nil {
+			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL); err != nil {
 				// oops
 			} else {
-				o.currentAngle = nextAngle
+				o.currentPL = nextPL
 			}
 		}
 		select {
@@ -129,19 +132,10 @@ func (o *servoSwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) e
 
 	switch r.Direction {
 	case mqp.SwitchDirectionStraight:
-		o.targetAngle = 180
+		o.targetPL = o.servo.straightPL
 	case mqp.SwitchDirectionOff:
-		o.targetAngle = 0
+		o.targetPL = o.servo.offPL
 	}
 
 	return nil
-}
-
-func (o *servoSwitch) angleToOnOffValues(angle int, maxDevValue int) (int, int) {
-	minValue := 120
-	maxValue := 550
-	step := float64(maxValue-minValue) / 180.0
-	on := 0
-	off := minValue + int(step*float64(angle))
-	return int(on), int(off)
 }

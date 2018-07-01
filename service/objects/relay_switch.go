@@ -69,7 +69,7 @@ func newRelaySwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 	if config.Type != model.ObjectTypeRelaySwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
-	straightPin, err := getSinglePin(oid, config, model.ConnectionNameStraightRelay)
+	_, straightPin, err := getSinglePin(oid, config, model.ConnectionNameStraightRelay)
 	if err != nil {
 		return nil, maskAny(err)
 	}
@@ -77,7 +77,7 @@ func newRelaySwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 	if err != nil {
 		return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
 	}
-	offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
+	_, offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
 	if err != nil {
 		return nil, maskAny(err)
 	}

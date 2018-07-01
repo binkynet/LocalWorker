@@ -33,22 +33,22 @@ func newBinarySensor(oid model.ObjectID, address mqp.ObjectAddress, config model
 	if config.Type != model.ObjectTypeBinarySensor {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
-	pins, ok := config.Connections[model.ConnectionNameSensor]
+	conn, ok := config.Connections[model.ConnectionNameSensor]
 	if !ok {
 		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' not found in object '%s'", model.ConnectionNameSensor, oid)
 	}
-	if len(pins) != 1 {
-		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' must have 1 pin in object '%s', got %d", model.ConnectionNameSensor, oid, len(pins))
+	if len(conn.Pins) != 1 {
+		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' must have 1 pin in object '%s', got %d", model.ConnectionNameSensor, oid, len(conn.Pins))
 	}
-	device, ok := devService.DeviceByID(pins[0].DeviceID)
+	device, ok := devService.DeviceByID(conn.Pins[0].DeviceID)
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found in object '%s'", pins[0].DeviceID, oid)
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' not found in object '%s'", conn.Pins[0].DeviceID, oid)
 	}
 	gpio, ok := device.(devices.GPIO)
 	if !ok {
-		return nil, errors.Wrapf(model.ValidationError, "Device '%s' in object '%s' is not a GPIO", pins[0].DeviceID, oid)
+		return nil, errors.Wrapf(model.ValidationError, "Device '%s' in object '%s' is not a GPIO", conn.Pins[0].DeviceID, oid)
 	}
-	pin := pins[0].Index
+	pin := conn.Pins[0].Index
 	if pin < 1 || uint(pin) > gpio.PinCount() {
 		return nil, errors.Wrapf(model.ValidationError, "Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, gpio.PinCount())
 	}
