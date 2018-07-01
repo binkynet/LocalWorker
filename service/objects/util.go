@@ -68,6 +68,14 @@ func absInt(x int) int {
 	return x
 }
 
+// maxInt returns the maximum of the given integers.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // minInt returns the minimum of the given integers.
 func minInt(a, b int) int {
 	if a < b {

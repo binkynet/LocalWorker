@@ -44,6 +44,7 @@ type servoSwitch struct {
 		index      model.DeviceIndex
 		straightPL int
 		offPL      int
+		stepSize   int
 	}
 	currentPL int
 	targetPL  int
@@ -64,6 +65,7 @@ func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 	}
 	straightPL := servoConn.GetIntConfig("straight", 150)
 	offPL := servoConn.GetIntConfig("off", 550)
+	stepSize := maxInt(1, servoConn.GetIntConfig("step", 5))
 	sw := &servoSwitch{
 		log:       log,
 		config:    config,
@@ -75,6 +77,7 @@ func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 	sw.servo.index = servoPin.Index
 	sw.servo.straightPL = straightPL
 	sw.servo.offPL = offPL
+	sw.servo.stepSize = stepSize
 	return sw, nil
 }
 
@@ -91,16 +94,18 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.servo.straightPL); err != nil {
 		return maskAny(err)
 	}
+	time.Sleep(time.Millisecond)
 	return nil
 }
 
 // Run the object until the given context is cancelled.
 func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
+	defer o.log.Debug().Msg("servoSwitch.Run terminated")
 	for {
 		targetPL := o.targetPL
 		if targetPL != o.currentPL {
 			// Make current pulse length closer to target pulse length
-			step := minInt(2, absInt(targetPL-o.currentPL))
+			step := minInt(o.servo.stepSize, absInt(targetPL-o.currentPL))
 			var nextPL int
 			if o.currentPL < targetPL {
 				nextPL = o.currentPL + step
@@ -112,6 +117,10 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 				Msg("Set servo")
 			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL); err != nil {
 				// oops
+				o.log.Debug().
+					Err(err).
+					Int("pulse", nextPL).
+					Msg("Set servo failed")
 			} else {
 				o.currentPL = nextPL
 			}
