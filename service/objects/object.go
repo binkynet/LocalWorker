@@ -31,11 +31,11 @@ type ObjectType struct {
 
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
-func (t *ObjectType) Run(ctx context.Context, log zerolog.Logger, mqttService mqtt.Service, topicPrefix string, service Service) error {
+func (t *ObjectType) Run(ctx context.Context, log zerolog.Logger, mqttService mqtt.Service, topicPrefix, workerID string, service Service) error {
 	if t.NextMessage == nil {
 		return nil
 	}
-	topic := path.Join(topicPrefix, t.TopicSuffix)
+	topic := path.Join(topicPrefix, workerID, t.TopicSuffix)
 	log = log.With().
 		Str("topic", topic).
 		Logger()

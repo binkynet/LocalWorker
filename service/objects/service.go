@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mq"
+	"github.com/binkynet/BinkyNet/mqp"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
@@ -19,7 +19,7 @@ import (
 type Service interface {
 	// ObjectByAddress returns the object with given address.
 	// Return false if not found
-	ObjectByAddress(address mq.ObjectAddress) (Object, bool)
+	ObjectByAddress(address mqp.ObjectAddress) (Object, bool)
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
@@ -27,8 +27,9 @@ type Service interface {
 }
 
 type service struct {
-	objects           map[mq.ObjectAddress]Object
-	configuredObjects map[mq.ObjectAddress]Object
+	moduleID          string
+	objects           map[mqp.ObjectAddress]Object
+	configuredObjects map[mqp.ObjectAddress]Object
 	topicPrefix       string
 	log               zerolog.Logger
 }
@@ -37,15 +38,16 @@ type service struct {
 // object configurations.
 func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
-		objects:           make(map[mq.ObjectAddress]Object),
-		configuredObjects: make(map[mq.ObjectAddress]Object),
+		moduleID:          moduleID,
+		objects:           make(map[mqp.ObjectAddress]Object),
+		configuredObjects: make(map[mqp.ObjectAddress]Object),
 		topicPrefix:       topicPrefix,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for id, c := range configs {
 		var obj Object
 		var err error
-		address := mq.JoinModuleLocal(moduleID, string(id))
+		address := mqp.JoinModuleLocal(moduleID, string(id))
 		log = log.With().
 			Str("address", string(address)).
 			Str("type", string(c.Type)).
@@ -76,7 +78,7 @@ func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicP
 
 // ObjectByAddress returns the object with given object address.
 // Return false if not found or not configured.
-func (s *service) ObjectByAddress(address mq.ObjectAddress) (Object, bool) {
+func (s *service) ObjectByAddress(address mqp.ObjectAddress) (Object, bool) {
 	dev, ok := s.configuredObjects[address]
 	return dev, ok
 }
@@ -84,7 +86,7 @@ func (s *service) ObjectByAddress(address mq.ObjectAddress) (Object, bool) {
 // Configure is called once to put all objects in the desired state.
 func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
-	configuredObjects := make(map[mq.ObjectAddress]Object)
+	configuredObjects := make(map[mqp.ObjectAddress]Object)
 	for addr, d := range s.objects {
 		time.Sleep(time.Millisecond * 200)
 		if err := d.Configure(ctx); err != nil {
@@ -125,7 +127,7 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 			visitedTypes[objType] = struct{}{}
 			g.Go(func() error {
 				s.log.Debug().Str("type", s.topicPrefix).Msg("starting object type")
-				if err := objType.Run(ctx, s.log, mqttService, s.topicPrefix, s); err != nil {
+				if err := objType.Run(ctx, s.log, mqttService, s.topicPrefix, s.moduleID, s); err != nil {
 					return maskAny(err)
 				}
 				return nil

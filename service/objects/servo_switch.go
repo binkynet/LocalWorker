@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mq"
+	"github.com/binkynet/BinkyNet/mqp"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
@@ -38,7 +38,7 @@ type servoSwitch struct {
 	mutex   sync.Mutex
 	log     zerolog.Logger
 	config  model.Object
-	address mq.ObjectAddress
+	address mqp.ObjectAddress
 	servo   struct {
 		device devices.PWM
 		index  model.DeviceIndex
@@ -48,7 +48,7 @@ type servoSwitch struct {
 }
 
 // newServoSwitch creates a new servo-switch object for the given configuration.
-func newServoSwitch(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeServoSwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -123,14 +123,14 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 }
 
 // ProcessMessage acts upons a given request.
-func (o *servoSwitch) ProcessMessage(ctx context.Context, r mq.SwitchRequest) error {
+func (o *servoSwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) error {
 	log := o.log.With().Str("direction", string(r.Direction)).Logger()
 	log.Debug().Msg("got request")
 
 	switch r.Direction {
-	case mq.SwitchDirectionStraight:
+	case mqp.SwitchDirectionStraight:
 		o.targetAngle = 180
-	case mq.SwitchDirectionOff:
+	case mqp.SwitchDirectionOff:
 		o.targetAngle = 0
 	}
 

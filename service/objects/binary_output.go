@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mq"
+	"github.com/binkynet/BinkyNet/mqp"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
@@ -13,25 +13,29 @@ import (
 
 var (
 	binaryOutputType = &ObjectType{
-		TopicSuffix: mq.BinaryOutputRequest{}.TopicSuffix(),
+		TopicSuffix: mqp.BinaryMessage{}.TopicSuffix(),
 		NextMessage: func(ctx context.Context, log zerolog.Logger, subscription mqtt.Subscription, service Service) error {
-			var msg mq.BinaryOutputRequest
+			var msg mqp.BinaryMessage
 			if err := subscription.NextMsg(ctx, &msg); err != nil {
 				log.Debug().Err(err).Msg("NextMsg failed")
 				return maskAny(err)
 			}
-			log = log.With().Str("address", string(msg.Address)).Logger()
-			//log.Debug().Msg("got message")
-			if obj, found := service.ObjectByAddress(msg.Address); found {
-				if x, ok := obj.(*binaryOutput); ok {
-					if err := x.ProcessMessage(ctx, msg); err != nil {
-						return maskAny(err)
+			if msg.IsRequest() {
+				log = log.With().Str("address", string(msg.Address)).Logger()
+				//log.Debug().Msg("got message")
+				if obj, found := service.ObjectByAddress(msg.Address); found {
+					if x, ok := obj.(*binaryOutput); ok {
+						if err := x.ProcessMessage(ctx, msg); err != nil {
+							return maskAny(err)
+						}
+					} else {
+						return errors.Errorf("Expected object of type binaryOutput")
 					}
 				} else {
-					return errors.Errorf("Expected object of type binaryOutput")
+					log.Debug().Msg("object not found")
 				}
 			} else {
-				log.Debug().Msg("object not found")
+				log.Debug().Msg("ignoring non-request message")
 			}
 			return nil
 		},
@@ -41,13 +45,13 @@ var (
 type binaryOutput struct {
 	log          zerolog.Logger
 	config       model.Object
-	address      mq.ObjectAddress
+	address      mqp.ObjectAddress
 	outputDevice devices.GPIO
 	pin          model.DeviceIndex
 }
 
 // newBinaryOutput creates a new binary-output object for the given configuration.
-func newBinaryOutput(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinaryOutput(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinaryOutput {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -101,7 +105,7 @@ func (o *binaryOutput) Run(ctx context.Context, mqttService mqtt.Service, topicP
 }
 
 // ProcessMessage acts upons a given request.
-func (o *binaryOutput) ProcessMessage(ctx context.Context, r mq.BinaryOutputRequest) error {
+func (o *binaryOutput) ProcessMessage(ctx context.Context, r mqp.BinaryMessage) error {
 	log := o.log.With().Bool("value", r.Value).Logger()
 	log.Debug().Msg("got request")
 	if err := o.outputDevice.Set(ctx, o.pin, r.Value); err != nil {

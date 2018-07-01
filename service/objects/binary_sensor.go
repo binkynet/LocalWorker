@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mq"
+	"github.com/binkynet/BinkyNet/mqp"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
@@ -23,13 +23,13 @@ var (
 type binarySensor struct {
 	log         zerolog.Logger
 	config      model.Object
-	address     mq.ObjectAddress
+	address     mqp.ObjectAddress
 	inputDevice devices.GPIO
 	pin         model.DeviceIndex
 }
 
 // newBinarySensor creates a new binary-sensor object for the given configuration.
-func newBinarySensor(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinarySensor(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinarySensor {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -97,7 +97,10 @@ func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicP
 				// Send feedback data
 				log = log.With().Bool("value", value).Logger()
 				log.Debug().Msg("change detected")
-				msg := mq.BinaryOutputFeedback{
+				msg := mqp.BinaryMessage{
+					MessageBase: mqp.MessageBase{
+						Mode: mqp.MessageModeActual,
+					},
 					Address: o.address,
 					Value:   value,
 				}

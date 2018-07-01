@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mq"
+	"github.com/binkynet/BinkyNet/mqp"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
@@ -38,7 +38,7 @@ type relaySwitch struct {
 	mutex            sync.Mutex
 	log              zerolog.Logger
 	config           model.Object
-	address          mq.ObjectAddress
+	address          mqp.ObjectAddress
 	straight         relaySwitchDirection
 	off              relaySwitchDirection
 	disableAllNeeded bool
@@ -65,7 +65,7 @@ func (rsd relaySwitchDirection) deactivateRelay(ctx context.Context) error {
 }
 
 // newRelaySwitch creates a new relay-switch object for the given configuration.
-func newRelaySwitch(oid model.ObjectID, address mq.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newRelaySwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeRelaySwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -150,7 +150,7 @@ func (o *relaySwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 }
 
 // ProcessMessage acts upons a given request.
-func (o *relaySwitch) ProcessMessage(ctx context.Context, r mq.SwitchRequest) error {
+func (o *relaySwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) error {
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
 
@@ -158,14 +158,14 @@ func (o *relaySwitch) ProcessMessage(ctx context.Context, r mq.SwitchRequest) er
 	log.Debug().Msg("got request")
 
 	switch r.Direction {
-	case mq.SwitchDirectionStraight:
+	case mqp.SwitchDirectionStraight:
 		if err := o.off.deactivateRelay(ctx); err != nil {
 			return maskAny(err)
 		}
 		if err := o.straight.activateRelay(ctx); err != nil {
 			return maskAny(err)
 		}
-	case mq.SwitchDirectionOff:
+	case mqp.SwitchDirectionOff:
 		if err := o.straight.deactivateRelay(ctx); err != nil {
 			return maskAny(err)
 		}
