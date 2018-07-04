@@ -98,11 +98,13 @@ func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicP
 				log = log.With().Bool("value", value).Logger()
 				log.Debug().Msg("change detected")
 				msg := mqp.BinaryMessage{
-					MessageBase: mqp.MessageBase{
-						Mode: mqp.MessageModeActual,
+					ObjectMessageBase: mqp.ObjectMessageBase{
+						MessageBase: mqp.MessageBase{
+							Mode: mqp.MessageModeActual,
+						},
+						Address: o.address,
 					},
-					Address: o.address,
-					Value:   value,
+					Value: value,
 				}
 				topic := path.Join(topicPrefix, msg.TopicSuffix())
 				lctx, cancel := context.WithTimeout(ctx, time.Millisecond*250)
