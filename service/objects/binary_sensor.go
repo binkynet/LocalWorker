@@ -2,7 +2,7 @@ package objects
 
 import (
 	"context"
-	"path"
+	"sync/atomic"
 	"time"
 
 	"github.com/binkynet/BinkyNet/model"
@@ -26,6 +26,7 @@ type binarySensor struct {
 	address     mqp.ObjectAddress
 	inputDevice devices.GPIO
 	pin         model.DeviceIndex
+	sendNow     int32
 }
 
 // newBinarySensor creates a new binary-sensor object for the given configuration.
@@ -75,7 +76,7 @@ func (o *binarySensor) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
+func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error {
 	lastValue := false
 	changes := 0
 	recentErrors := 0
@@ -88,15 +89,16 @@ func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicP
 		if err != nil {
 			// Try again soon
 			if recentErrors == 0 {
-				o.log.Info().Err(err).Msg("Get value failed")
+				log.Info().Err(err).Msg("Get value failed")
 			}
 			recentErrors++
 		} else {
 			recentErrors = 0
-			if lastValue != value || changes == 0 {
+			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
+			if force || lastValue != value || changes == 0 {
 				// Send feedback data
 				log = log.With().Bool("value", value).Logger()
-				log.Debug().Msg("change detected")
+				log.Debug().Bool("force", force).Msg("change detected")
 				msg := mqp.BinaryMessage{
 					ObjectMessageBase: mqp.ObjectMessageBase{
 						MessageBase: mqp.MessageBase{
@@ -106,7 +108,7 @@ func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicP
 					},
 					Value: value,
 				}
-				topic := path.Join(topicPrefix, msg.TopicSuffix())
+				topic := mqp.CreateObjectTopic(topicPrefix, moduleID, msg)
 				lctx, cancel := context.WithTimeout(ctx, time.Millisecond*250)
 				if err := mqttService.Publish(lctx, msg, topic, mqtt.QosAsLeastOnce); err != nil {
 					o.log.Debug().Err(err).Msg("Publish failed")
@@ -126,6 +128,13 @@ func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicP
 			// Context cancelled
 			return nil
 		}
+	}
+}
+
+// ProcessPowerMessage acts upons a given power message.
+func (o *binarySensor) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
+	if m.Active && m.IsRequest() {
+		atomic.StoreInt32(&o.sendNow, 1)
 	}
 	return nil
 }

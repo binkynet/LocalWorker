@@ -117,7 +117,7 @@ func (o *relaySwitch) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *relaySwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
+func (o *relaySwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error {
 	for {
 		o.mutex.Lock()
 		if o.disableAllNeeded && time.Now().After(o.disableAllTime) {
@@ -177,4 +177,9 @@ func (o *relaySwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) e
 	o.disableAllTime = time.Now().Add(time.Second)
 
 	return nil
+}
+
+// ProcessPowerMessage acts upons a given power message.
+func (o *relaySwitch) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
+	return nil // TODO
 }

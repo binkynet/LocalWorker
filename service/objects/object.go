@@ -4,6 +4,7 @@ import (
 	"context"
 	"path"
 
+	"github.com/binkynet/BinkyNet/mqp"
 	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
@@ -16,7 +17,9 @@ type Object interface {
 	// Configure is called once to put the object in the desired state.
 	Configure(ctx context.Context) error
 	// Run the object until the given context is cancelled.
-	Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error
+	Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error
+	// ProcessPowerMessage acts upons a given power message.
+	ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error
 }
 
 // ObjectType contains the API supported a specific type of object.
@@ -39,7 +42,7 @@ func (t *ObjectType) Run(ctx context.Context, log zerolog.Logger, mqttService mq
 	log = log.With().
 		Str("topic", topic).
 		Logger()
-	subscription, err := mqttService.Subscribe(ctx, topic, mqtt.QosAsLeastOnce)
+	subscription, err := mqttService.Subscribe(ctx, topic, mqtt.QosDefault)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to subscribe to MQTT topic")
 		return maskAny(err)

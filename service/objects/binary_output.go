@@ -99,7 +99,7 @@ func (o *binaryOutput) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *binaryOutput) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
+func (o *binaryOutput) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error {
 	// Nothing to do here
 	return nil
 }
@@ -113,4 +113,9 @@ func (o *binaryOutput) ProcessMessage(ctx context.Context, r mqp.BinaryMessage) 
 		return maskAny(err)
 	}
 	return nil
+}
+
+// ProcessPowerMessage acts upons a given power message.
+func (o *binaryOutput) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
+	return nil // TODO
 }

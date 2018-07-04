@@ -99,7 +99,7 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
+func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error {
 	defer o.log.Debug().Msg("servoSwitch.Run terminated")
 	for {
 		targetPL := o.targetPL
@@ -147,4 +147,9 @@ func (o *servoSwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) e
 	}
 
 	return nil
+}
+
+// ProcessPowerMessage acts upons a given power message.
+func (o *servoSwitch) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
+	return nil // TODO
 }

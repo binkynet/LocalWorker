@@ -2,6 +2,7 @@ package objects
 
 import (
 	"context"
+	"path"
 	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
@@ -105,19 +106,29 @@ func (s *service) Configure(ctx context.Context) error {
 
 // Run all required topics until the given context is cancelled.
 func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
+	defer func() {
+		s.log.Debug().Msg("Run Objects ended")
+	}()
 	if len(s.configuredObjects) == 0 {
 		s.log.Warn().Msg("no configured objects, just waiting for context to be cancelled")
 		<-ctx.Done()
 	} else {
 		g, ctx := errgroup.WithContext(ctx)
+		// Keep sending ping messages
 		g.Go(func() error { s.sendPingMessages(ctx, mqttService); return nil })
+
+		// Receive power messages
+		g.Go(func() error { s.receivePowerMessages(ctx, mqttService); return nil })
 
 		// Run all objects & object types.
 		visitedTypes := make(map[*ObjectType]struct{})
-		for _, obj := range s.configuredObjects {
+		for addr, obj := range s.configuredObjects {
 			// Run the object itself
+			addr := addr // Bring range variables in scope
+			obj := obj
 			g.Go(func() error {
-				if err := obj.Run(ctx, mqttService, s.topicPrefix); err != nil {
+				s.log.Debug().Str("address", string(addr)).Msg("Running object")
+				if err := obj.Run(ctx, mqttService, s.topicPrefix, s.moduleID); err != nil {
 					return maskAny(err)
 				}
 				return nil
@@ -139,6 +150,7 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 			})
 		}
 		if err := g.Wait(); err != nil {
+			s.log.Warn().Err(err).Msg("Run Objects failed")
 			return maskAny(err)
 		}
 	}
@@ -174,6 +186,44 @@ func (s *service) sendPingMessages(ctx context.Context, mqttService mqtt.Service
 		case <-ctx.Done():
 			// Context canceled
 			return
+		}
+	}
+}
+
+// Run subscribes to the intended topic and process incoming messages
+// until the given context is cancelled.
+func (s *service) receivePowerMessages(ctx context.Context, mqttService mqtt.Service) error {
+	topic := path.Join(s.topicPrefix, "global/power")
+	log := s.log.With().
+		Str("topic", topic).
+		Logger()
+	subscription, err := mqttService.Subscribe(ctx, topic, mqtt.QosDefault)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to subscribe to MQTT topic")
+		return maskAny(err)
+	}
+	log.Debug().Msg("subscribed to MQTT topic")
+	defer subscription.Close()
+
+	for {
+		// Wait for next message and process it
+		var msg mqp.PowerMessage
+		if err := subscription.NextMsg(ctx, &msg); err != nil {
+			if errors.Cause(err) == context.Canceled {
+				return nil
+			}
+			log.Debug().Err(err).Msg("NextMsg failed")
+		} else if msg.IsRequest() {
+			// Process power request
+			log.Debug().Bool("active", msg.Active).Msg("Receiver power request")
+			for _, obj := range s.configuredObjects {
+				// Run the object itself
+				go func(obj Object) {
+					if err := obj.ProcessPowerMessage(ctx, msg); err != nil {
+						log.Info().Err(err).Msg("Object failed to process PowerMessage")
+					}
+				}(obj)
+			}
 		}
 	}
 }
