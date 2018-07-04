@@ -161,7 +161,7 @@ func (s *service) sendPingMessages(ctx context.Context, mqttService mqtt.Service
 			Version:           "1.2.3",
 			Uptime:            int(time.Since(s.startTime).Seconds()),
 		}
-		delay := time.Second * 30
+		delay := time.Second * 15
 		if err := mqttService.Publish(ctx, msg, topic, mqtt.QosDefault); err != nil {
 			log.Info().Err(err).Msg("Failed to send ping message")
 			delay = time.Second * 5
