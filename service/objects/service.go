@@ -27,6 +27,7 @@ type Service interface {
 }
 
 type service struct {
+	startTime         time.Time
 	moduleID          string
 	objects           map[mqp.ObjectAddress]Object
 	configuredObjects map[mqp.ObjectAddress]Object
@@ -38,6 +39,7 @@ type service struct {
 // object configurations.
 func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
+		startTime:         time.Now(),
 		moduleID:          moduleID,
 		objects:           make(map[mqp.ObjectAddress]Object),
 		configuredObjects: make(map[mqp.ObjectAddress]Object),
@@ -108,6 +110,9 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 		<-ctx.Done()
 	} else {
 		g, ctx := errgroup.WithContext(ctx)
+		g.Go(func() error { s.sendPingMessages(ctx, mqttService); return nil })
+
+		// Run all objects & object types.
 		visitedTypes := make(map[*ObjectType]struct{})
 		for _, obj := range s.configuredObjects {
 			// Run the object itself
@@ -138,4 +143,37 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 		}
 	}
 	return nil
+}
+
+// sendPingMessages keeps sending ping messages until the given context is canceled.
+func (s *service) sendPingMessages(ctx context.Context, mqttService mqtt.Service) {
+	topic := mqp.CreateGlobalTopic(s.topicPrefix, mqp.PingMessage{})
+	log := s.log.With().Str("topic", topic).Logger()
+	log.Info().Str("topic", topic).Msg("Sending ping messages")
+	defer func() {
+		log.Info().Str("topic", topic).Msg("Stopped sending ping messages")
+	}()
+	for {
+		// Send ping
+		msg := mqp.PingMessage{
+			GlobalMessageBase: mqp.NewGlobalMessageBase(s.moduleID, mqp.MessageModeActual),
+			ProtocolVersion:   mqp.ProtocolVersion,
+			Version:           "1.2.3",
+			Uptime:            int(time.Since(s.startTime).Seconds()),
+		}
+		delay := time.Second * 30
+		if err := mqttService.Publish(ctx, msg, topic, mqtt.QosDefault); err != nil {
+			log.Info().Err(err).Msg("Failed to send ping message")
+			delay = time.Second * 5
+		}
+
+		// Wait
+		select {
+		case <-time.After(delay):
+			// Continue
+		case <-ctx.Done():
+			// Context canceled
+			return
+		}
+	}
 }

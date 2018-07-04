@@ -33,6 +33,8 @@ const (
 	QosAsLeastOnce = mqtt.QoS1
 	//QosExactlyOnce represents "QoS 2: Exactly once delivery".
 	QosExactlyOnce = mqtt.QoS2
+	// QosDefault is the default QoS for messages
+	QosDefault = QosAsLeastOnce
 )
 
 type Config struct {
