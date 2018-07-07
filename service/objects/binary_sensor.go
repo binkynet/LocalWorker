@@ -7,8 +7,8 @@ import (
 
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/BinkyNet/mqp"
+	"github.com/binkynet/BinkyNet/mqtt"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 )

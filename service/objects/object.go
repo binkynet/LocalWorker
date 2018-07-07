@@ -5,7 +5,7 @@ import (
 	"path"
 
 	"github.com/binkynet/BinkyNet/mqp"
-	"github.com/binkynet/LocalWorker/service/mqtt"
+	"github.com/binkynet/BinkyNet/mqtt"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 )

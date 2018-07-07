@@ -3,12 +3,12 @@ package worker
 import (
 	"context"
 
+	"github.com/binkynet/BinkyNet/model"
+	"github.com/binkynet/BinkyNet/mqtt"
 	"github.com/rs/zerolog"
 
-	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/binkynet/LocalWorker/service/objects"
 )
 

@@ -5,7 +5,7 @@ COMMIT := $(shell git rev-parse --short HEAD)
 
 GOBUILDDIR := $(ROOTDIR)/.gobuild
 BINDIR := $(ROOTDIR)
-VENDORDIR := $(ROOTDIR)/vendor
+VENDORDIR := $(ROOTDIR)/deps
 
 ORGPATH := github.com/binkynet
 ORGDIR := $(GOBUILDDIR)/src/$(ORGPATH)
@@ -44,8 +44,8 @@ local:
 .gobuild:
 	@mkdir -p $(ORGDIR)
 	@pulsar go path -p $(REPOPATH)
-	@GOPATH=$(GOPATH) pulsar go flatten -V $(VENDORDIR)
 	@GOPATH=$(GOPATH) pulsar go get $(ORGPATH)/BinkyNet/...
+	@GOPATH=$(GOPATH) pulsar go flatten -V $(VENDORDIR)
 
 .PHONY: $(GOCACHEVOL)
 $(GOCACHEVOL):

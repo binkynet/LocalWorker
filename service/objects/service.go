@@ -11,8 +11,8 @@ import (
 
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/BinkyNet/mqp"
+	"github.com/binkynet/BinkyNet/mqtt"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/pkg/errors"
 )
 
@@ -208,14 +208,15 @@ func (s *service) receivePowerMessages(ctx context.Context, mqttService mqtt.Ser
 	for {
 		// Wait for next message and process it
 		var msg mqp.PowerMessage
-		if err := subscription.NextMsg(ctx, &msg); err != nil {
+		msgID, err := subscription.NextMsg(ctx, &msg)
+		if err != nil {
 			if errors.Cause(err) == context.Canceled {
 				return nil
 			}
 			log.Debug().Err(err).Msg("NextMsg failed")
 		} else if msg.IsRequest() {
 			// Process power request
-			log.Debug().Bool("active", msg.Active).Msg("Receiver power request")
+			log.Debug().Int("msg-id", msgID).Bool("active", msg.Active).Msg("Receiver power request")
 			for _, obj := range s.configuredObjects {
 				// Run the object itself
 				go func(obj Object) {

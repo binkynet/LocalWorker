@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/binkynet/BinkyNet/mqp"
-	"github.com/binkynet/LocalWorker/service/mqtt"
+	"github.com/binkynet/BinkyNet/mqtt"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 )
@@ -14,12 +14,13 @@ var (
 		TopicSuffix: mqp.SwitchMessage{}.TopicSuffix(),
 		NextMessage: func(ctx context.Context, log zerolog.Logger, subscription mqtt.Subscription, service Service) error {
 			var msg mqp.SwitchMessage
-			if err := subscription.NextMsg(ctx, &msg); err != nil {
+			msgID, err := subscription.NextMsg(ctx, &msg)
+			if err != nil {
 				log.Debug().Err(err).Msg("NextMsg failed")
 				return maskAny(err)
 			}
 			if msg.IsRequest() {
-				log = log.With().Str("address", string(msg.Address)).Logger()
+				log = log.With().Int("msg-id", msgID).Str("address", string(msg.Address)).Logger()
 				//log.Debug().Msg("got message")
 				if obj, found := service.ObjectByAddress(msg.Address); found {
 					if x, ok := obj.(switchAPI); ok {

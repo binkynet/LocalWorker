@@ -26,11 +26,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
+	"github.com/binkynet/BinkyNet/mqtt"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
-	"github.com/binkynet/LocalWorker/service/mqtt"
 	"github.com/binkynet/LocalWorker/service/server"
 )
 
