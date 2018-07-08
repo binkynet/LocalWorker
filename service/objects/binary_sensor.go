@@ -24,13 +24,14 @@ type binarySensor struct {
 	log         zerolog.Logger
 	config      model.Object
 	address     mqp.ObjectAddress
+	sender      string
 	inputDevice devices.GPIO
 	pin         model.DeviceIndex
 	sendNow     int32
 }
 
 // newBinarySensor creates a new binary-sensor object for the given configuration.
-func newBinarySensor(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinarySensor(sender string, oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinarySensor {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -57,6 +58,7 @@ func newBinarySensor(oid model.ObjectID, address mqp.ObjectAddress, config model
 		log:         log,
 		config:      config,
 		address:     address,
+		sender:      sender,
 		inputDevice: gpio,
 		pin:         pin,
 	}, nil
@@ -100,22 +102,18 @@ func (o *binarySensor) Run(ctx context.Context, mqttService mqtt.Service, topicP
 				log = log.With().Bool("value", value).Logger()
 				log.Debug().Bool("force", force).Msg("change detected")
 				msg := mqp.BinaryMessage{
-					ObjectMessageBase: mqp.ObjectMessageBase{
-						MessageBase: mqp.MessageBase{
-							Mode: mqp.MessageModeActual,
-						},
-						Address: o.address,
-					},
-					Value: value,
+					ObjectMessageBase: mqp.NewObjectMessageBase(o.sender, mqp.MessageModeActual, o.address),
+					Value:             value,
 				}
 				topic := mqp.CreateObjectTopic(topicPrefix, moduleID, msg)
 				lctx, cancel := context.WithTimeout(ctx, time.Millisecond*250)
-				if err := mqttService.Publish(lctx, msg, topic, mqtt.QosAsLeastOnce); err != nil {
+				if err := mqttService.Publish(lctx, msg, topic, mqtt.QosDefault); err != nil {
 					o.log.Debug().Err(err).Msg("Publish failed")
+				} else {
+					log.Debug().Str("topic", topic).Msg("change published")
+					lastValue = value
 				}
 				cancel()
-				log.Debug().Str("topic", topic).Msg("change published")
-				lastValue = value
 				changes++
 			}
 		}

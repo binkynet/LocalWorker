@@ -20,6 +20,7 @@ package objects
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/binkynet/BinkyNet/model"
@@ -28,6 +29,7 @@ import (
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -39,6 +41,7 @@ type servoSwitch struct {
 	log     zerolog.Logger
 	config  model.Object
 	address mqp.ObjectAddress
+	sender  string
 	servo   struct {
 		device     devices.PWM
 		index      model.DeviceIndex
@@ -46,12 +49,13 @@ type servoSwitch struct {
 		offPL      int
 		stepSize   int
 	}
-	currentPL int
-	targetPL  int
+	sendActualNeeded int32
+	currentPL        int
+	targetPL         int
 }
 
 // newServoSwitch creates a new servo-switch object for the given configuration.
-func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newServoSwitch(sender string, oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeServoSwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -70,6 +74,7 @@ func newServoSwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 		log:       log,
 		config:    config,
 		address:   address,
+		sender:    sender,
 		currentPL: offPL,
 		targetPL:  straightPL,
 	}
@@ -89,9 +94,10 @@ func (o *servoSwitch) Type() *ObjectType {
 // Configure is called once to put the object in the desired state.
 func (o *servoSwitch) Configure(ctx context.Context) error {
 	o.targetPL = o.servo.straightPL
-	o.currentPL = o.servo.straightPL
+	o.currentPL = (o.servo.straightPL + o.servo.offPL) / 2
+	o.sendActualNeeded = 1
 
-	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.servo.straightPL); err != nil {
+	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL); err != nil {
 		return maskAny(err)
 	}
 	time.Sleep(time.Millisecond)
@@ -124,6 +130,28 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 			} else {
 				o.currentPL = nextPL
 			}
+		} else {
+			// Requested position reached
+			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
+			if sendNeeded {
+				currentDirection := mqp.SwitchDirectionStraight
+				if o.currentPL == o.servo.offPL {
+					currentDirection = mqp.SwitchDirectionOff
+				}
+				msg := mqp.SwitchMessage{
+					ObjectMessageBase: mqp.NewObjectMessageBase(o.sender, mqp.MessageModeActual, o.address),
+					Direction:         currentDirection,
+				}
+				topic := mqp.CreateObjectTopic(topicPrefix, moduleID, msg)
+				lctx, cancel := context.WithTimeout(ctx, time.Millisecond*250)
+				if err := mqttService.Publish(lctx, msg, topic, mqtt.QosDefault); err != nil {
+					o.log.Debug().Err(err).Msg("Publish failed")
+					atomic.StoreInt32(&o.sendActualNeeded, 1)
+				} else {
+					log.Debug().Str("topic", topic).Msg("change published")
+				}
+				cancel()
+			}
 		}
 		select {
 		case <-time.After(time.Millisecond * 50):
@@ -145,11 +173,15 @@ func (o *servoSwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) e
 	case mqp.SwitchDirectionOff:
 		o.targetPL = o.servo.offPL
 	}
+	atomic.StoreInt32(&o.sendActualNeeded, 1)
 
 	return nil
 }
 
 // ProcessPowerMessage acts upons a given power message.
 func (o *servoSwitch) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
-	return nil // TODO
+	if m.Active && m.IsRequest() {
+		atomic.StoreInt32(&o.sendActualNeeded, 1)
+	}
+	return nil
 }

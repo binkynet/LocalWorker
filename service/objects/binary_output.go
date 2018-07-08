@@ -47,12 +47,13 @@ type binaryOutput struct {
 	log          zerolog.Logger
 	config       model.Object
 	address      mqp.ObjectAddress
+	sender       string
 	outputDevice devices.GPIO
 	pin          model.DeviceIndex
 }
 
 // newBinaryOutput creates a new binary-output object for the given configuration.
-func newBinaryOutput(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newBinaryOutput(sender string, oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeBinaryOutput {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -79,6 +80,7 @@ func newBinaryOutput(oid model.ObjectID, address mqp.ObjectAddress, config model
 		log:          log,
 		config:       config,
 		address:      address,
+		sender:       sender,
 		outputDevice: gpio,
 		pin:          pin,
 	}, nil

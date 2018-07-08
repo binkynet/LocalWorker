@@ -20,6 +20,7 @@ package objects
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/binkynet/BinkyNet/model"
@@ -28,6 +29,7 @@ import (
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -35,14 +37,17 @@ var (
 )
 
 type relaySwitch struct {
-	mutex            sync.Mutex
-	log              zerolog.Logger
-	config           model.Object
-	address          mqp.ObjectAddress
-	straight         relaySwitchDirection
-	off              relaySwitchDirection
-	disableAllNeeded bool
-	disableAllTime   time.Time
+	mutex              sync.Mutex
+	log                zerolog.Logger
+	config             model.Object
+	address            mqp.ObjectAddress
+	sender             string
+	straight           relaySwitchDirection
+	off                relaySwitchDirection
+	disableAllNeeded   bool
+	disableAllTime     time.Time
+	sendActualNeeded   int32
+	requestedDirection mqp.SwitchDirection
 }
 
 type relaySwitchDirection struct {
@@ -65,7 +70,7 @@ func (rsd relaySwitchDirection) deactivateRelay(ctx context.Context) error {
 }
 
 // newRelaySwitch creates a new relay-switch object for the given configuration.
-func newRelaySwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newRelaySwitch(sender string, oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeRelaySwitch {
 		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
 	}
@@ -89,6 +94,7 @@ func newRelaySwitch(oid model.ObjectID, address mqp.ObjectAddress, config model.
 		log:      log,
 		config:   config,
 		address:  address,
+		sender:   sender,
 		straight: relaySwitchDirection{straightDev, straightPin.Index},
 		off:      relaySwitchDirection{offDev, offPin.Index},
 	}, nil
@@ -113,6 +119,9 @@ func (o *relaySwitch) Configure(ctx context.Context) error {
 	if err := o.off.deactivateRelay(ctx); err != nil {
 		return maskAny(err)
 	}
+	if err := o.switchTo(ctx, mqp.SwitchDirectionStraight); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
 
@@ -120,21 +129,41 @@ func (o *relaySwitch) Configure(ctx context.Context) error {
 func (o *relaySwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error {
 	for {
 		o.mutex.Lock()
-		if o.disableAllNeeded && time.Now().After(o.disableAllTime) {
-			hasErrors := false
-			if err := o.straight.deactivateRelay(ctx); err != nil {
-				o.log.Warn().Err(err).Msg("Straight relay did not de-activate")
-				hasErrors = true
+		var sendActualNeeded bool
+		if o.disableAllNeeded {
+			if time.Now().After(o.disableAllTime) {
+				hasErrors := false
+				if err := o.straight.deactivateRelay(ctx); err != nil {
+					o.log.Warn().Err(err).Msg("Straight relay did not de-activate")
+					hasErrors = true
+				}
+				if err := o.off.deactivateRelay(ctx); err != nil {
+					o.log.Warn().Err(err).Msg("Off relay did not de-activate")
+					hasErrors = true
+				}
+				if !hasErrors {
+					o.disableAllNeeded = false
+				}
 			}
-			if err := o.off.deactivateRelay(ctx); err != nil {
-				o.log.Warn().Err(err).Msg("Off relay did not de-activate")
-				hasErrors = true
-			}
-			if !hasErrors {
-				o.disableAllNeeded = false
-			}
+		} else {
+			sendActualNeeded = atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
 		}
 		o.mutex.Unlock()
+		if sendActualNeeded {
+			msg := mqp.SwitchMessage{
+				ObjectMessageBase: mqp.NewObjectMessageBase(o.sender, mqp.MessageModeActual, o.address),
+				Direction:         o.requestedDirection,
+			}
+			topic := mqp.CreateObjectTopic(topicPrefix, moduleID, msg)
+			lctx, cancel := context.WithTimeout(ctx, time.Millisecond*250)
+			if err := mqttService.Publish(lctx, msg, topic, mqtt.QosDefault); err != nil {
+				o.log.Debug().Err(err).Msg("Publish failed")
+				atomic.StoreInt32(&o.sendActualNeeded, 1)
+			} else {
+				log.Debug().Str("topic", topic).Msg("change published")
+			}
+			cancel()
+		}
 		select {
 		case <-time.After(time.Millisecond * 10):
 			// Continue
@@ -151,13 +180,23 @@ func (o *relaySwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 
 // ProcessMessage acts upons a given request.
 func (o *relaySwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) error {
-	o.mutex.Lock()
-	defer o.mutex.Unlock()
-
 	log := o.log.With().Str("direction", string(r.Direction)).Logger()
 	log.Debug().Msg("got request")
 
-	switch r.Direction {
+	o.mutex.Lock()
+	defer o.mutex.Unlock()
+	if err := o.switchTo(ctx, r.Direction); err != nil {
+		return maskAny(err)
+	}
+
+	return nil
+}
+
+// switchTo initiates the switch action.
+// The mutex must be held when calling this function.
+func (o *relaySwitch) switchTo(ctx context.Context, direction mqp.SwitchDirection) error {
+	atomic.StoreInt32(&o.sendActualNeeded, 1)
+	switch direction {
 	case mqp.SwitchDirectionStraight:
 		if err := o.off.deactivateRelay(ctx); err != nil {
 			return maskAny(err)
@@ -175,11 +214,15 @@ func (o *relaySwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) e
 	}
 	o.disableAllNeeded = true
 	o.disableAllTime = time.Now().Add(time.Second)
+	o.requestedDirection = direction
 
 	return nil
 }
 
 // ProcessPowerMessage acts upons a given power message.
 func (o *relaySwitch) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
-	return nil // TODO
+	if m.Active && m.IsRequest() {
+		atomic.StoreInt32(&o.sendActualNeeded, 1)
+	}
+	return nil
 }

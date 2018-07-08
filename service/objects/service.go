@@ -58,13 +58,13 @@ func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicP
 		log.Debug().Msg("creating object...")
 		switch c.Type {
 		case model.ObjectTypeBinarySensor:
-			obj, err = newBinarySensor(id, address, c, log, devService)
+			obj, err = newBinarySensor(moduleID, id, address, c, log, devService)
 		case model.ObjectTypeBinaryOutput:
-			obj, err = newBinaryOutput(id, address, c, log, devService)
+			obj, err = newBinaryOutput(moduleID, id, address, c, log, devService)
 		case model.ObjectTypeRelaySwitch:
-			obj, err = newRelaySwitch(id, address, c, log, devService)
+			obj, err = newRelaySwitch(moduleID, id, address, c, log, devService)
 		case model.ObjectTypeServoSwitch:
-			obj, err = newServoSwitch(id, address, c, log, devService)
+			obj, err = newServoSwitch(moduleID, id, address, c, log, devService)
 		default:
 			err = errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
 		}
