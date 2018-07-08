@@ -43,15 +43,54 @@ type servoSwitch struct {
 	address mqp.ObjectAddress
 	sender  string
 	servo   struct {
-		device     devices.PWM
-		index      model.DeviceIndex
-		straightPL int
-		offPL      int
-		stepSize   int
+		device        devices.PWM
+		index         model.DeviceIndex
+		straightPL    int
+		offPL         int
+		stepSize      int
+		phaseStraight *phaseRelay
+		phaseOff      *phaseRelay
 	}
 	sendActualNeeded int32
 	currentPL        int
 	targetPL         int
+}
+
+type phaseRelay struct {
+	device     devices.GPIO
+	pin        model.DeviceIndex
+	lastActive bool
+}
+
+func (r *phaseRelay) configure(ctx context.Context) error {
+	if err := r.device.SetDirection(ctx, r.pin, devices.PinDirectionOutput); err != nil {
+		return maskAny(err)
+	}
+	if err := r.device.Set(ctx, r.pin, false); err != nil {
+		return maskAny(err)
+	}
+	r.lastActive = false
+	return nil
+}
+
+func (r *phaseRelay) activateRelay(ctx context.Context) error {
+	if !r.lastActive {
+		if err := r.device.Set(ctx, r.pin, true); err != nil {
+			return maskAny(err)
+		}
+		r.lastActive = true
+	}
+	return nil
+}
+
+func (r *phaseRelay) deactivateRelay(ctx context.Context) error {
+	if r.lastActive {
+		if err := r.device.Set(ctx, r.pin, false); err != nil {
+			return maskAny(err)
+		}
+		r.lastActive = false
+	}
+	return nil
 }
 
 // newServoSwitch creates a new servo-switch object for the given configuration.
@@ -83,6 +122,33 @@ func newServoSwitch(sender string, oid model.ObjectID, address mqp.ObjectAddress
 	sw.servo.straightPL = straightPL
 	sw.servo.offPL = offPL
 	sw.servo.stepSize = stepSize
+
+	// Phase relay for straight direction
+	if _, found := config.Connections[model.ConnectionNamePhaseStraightRelay]; found {
+		_, phaseStraightPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseStraightRelay)
+		if err != nil {
+			return nil, maskAny(err)
+		}
+		phaseStraightDev, err := getGPIOForPin(phaseStraightPin, devService)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNamePhaseStraightRelay, oid)
+		}
+		sw.servo.phaseStraight = &phaseRelay{phaseStraightDev, phaseStraightPin.Index, true}
+	}
+
+	// Phase relay for off direction
+	if _, found := config.Connections[model.ConnectionNamePhaseOffRelay]; found {
+		_, phaseOffPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseOffRelay)
+		if err != nil {
+			return nil, maskAny(err)
+		}
+		phaseOffDev, err := getGPIOForPin(phaseOffPin, devService)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNamePhaseOffRelay, oid)
+		}
+		sw.servo.phaseOff = &phaseRelay{phaseOffDev, phaseOffPin.Index, true}
+	}
+
 	return sw, nil
 }
 
@@ -97,6 +163,16 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 	o.currentPL = (o.servo.straightPL + o.servo.offPL) / 2
 	o.sendActualNeeded = 1
 
+	if r := o.servo.phaseStraight; r != nil {
+		if err := r.configure(ctx); err != nil {
+			return maskAny(err)
+		}
+	}
+	if r := o.servo.phaseOff; r != nil {
+		if err := r.configure(ctx); err != nil {
+			return maskAny(err)
+		}
+	}
 	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL); err != nil {
 		return maskAny(err)
 	}
@@ -110,6 +186,17 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 	for {
 		targetPL := o.targetPL
 		if targetPL != o.currentPL {
+			// Ensure all phase relays are deactivated
+			if r := o.servo.phaseStraight; r != nil {
+				if err := r.deactivateRelay(ctx); err != nil {
+					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
+				}
+			}
+			if r := o.servo.phaseOff; r != nil {
+				if err := r.deactivateRelay(ctx); err != nil {
+					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
+				}
+			}
 			// Make current pulse length closer to target pulse length
 			step := minInt(o.servo.stepSize, absInt(targetPL-o.currentPL))
 			var nextPL int
@@ -132,12 +219,24 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 			}
 		} else {
 			// Requested position reached
+			currentDirection := mqp.SwitchDirectionStraight
+			if o.currentPL == o.servo.offPL {
+				currentDirection = mqp.SwitchDirectionOff
+			}
+			// Set phase relays
+			if r := o.servo.phaseStraight; r != nil && currentDirection == mqp.SwitchDirectionStraight {
+				if err := r.activateRelay(ctx); err != nil {
+					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
+				}
+			}
+			if r := o.servo.phaseOff; r != nil && currentDirection == mqp.SwitchDirectionOff {
+				if err := r.activateRelay(ctx); err != nil {
+					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
+				}
+			}
+			// Send actual message (if needed)
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
 			if sendNeeded {
-				currentDirection := mqp.SwitchDirectionStraight
-				if o.currentPL == o.servo.offPL {
-					currentDirection = mqp.SwitchDirectionOff
-				}
 				msg := mqp.SwitchMessage{
 					ObjectMessageBase: mqp.NewObjectMessageBase(o.sender, mqp.MessageModeActual, o.address),
 					Direction:         currentDirection,
