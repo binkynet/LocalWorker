@@ -310,4 +310,5 @@ func (s *service) Shutdown(ctx context.Context) error {
 // EnableMQTTLogger enables/disables logging to mqtt.
 func (s *service) EnableMQTTLogger(enable bool) {
 	s.MQTTLogWriter.Enable(enable)
+	s.Log.Info().Bool("enable", enable).Msg("Toggle MQTT logging")
 }
