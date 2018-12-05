@@ -39,6 +39,8 @@ type Service interface {
 	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
 	// Called to force a complete reload of the worker.
 	Reload(ctx context.Context) error
+	// Called to force a termination of the local worker.
+	Shutdown(ctx context.Context) error
 }
 
 type Config struct {
@@ -65,6 +67,7 @@ type service struct {
 	mqttService        mqtt.Service
 	netManagerClient   *netmanager.Client
 	topicPrefix        string
+	shutdown           bool
 }
 
 // NewService creates a Service instance and returns it.
@@ -174,6 +177,9 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 	}()
 
 	for {
+		if s.shutdown {
+			return nil
+		}
 		delay := time.Second
 
 		// Request configuration
@@ -270,6 +276,20 @@ func (s *service) Reload(ctx context.Context) error {
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+
+	if cancel := s.workerCancel; cancel != nil {
+		cancel()
+	}
+	return nil
+}
+
+// Called to force a complete termination of the worker.
+func (s *service) Shutdown(ctx context.Context) error {
+	s.Log.Info().Msg("Shutdown called")
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.shutdown = true
 
 	if cancel := s.workerCancel; cancel != nil {
 		cancel()

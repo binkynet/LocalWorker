@@ -40,3 +40,14 @@ func (s *server) handleReload(w http.ResponseWriter, r *http.Request, ps httprou
 		sendJSON(w, http.StatusOK, nil)
 	}
 }
+
+func (s *server) handleShutdown(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	ctx := context.Background()
+	err := s.api.Shutdown(ctx)
+	if err != nil {
+		handleError(w, err)
+	} else {
+		sendJSON(w, http.StatusOK, nil)
+	}
+	close(s.shutdownChan)
+}

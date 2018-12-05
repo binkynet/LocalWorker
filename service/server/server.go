@@ -25,6 +25,8 @@ type API interface {
 	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
 	// Called to force a complete reload of the worker.
 	Reload(ctx context.Context) error
+	// Called to force a termination of the local worker.
+	Shutdown(ctx context.Context) error
 }
 
 type Config struct {
@@ -39,18 +41,20 @@ func (c Config) createTLSConfig() (*tls.Config, error) {
 // NewServer creates a new server
 func NewServer(conf Config, api API, log zerolog.Logger) (Server, error) {
 	return &server{
-		Config:     conf,
-		log:        log.With().Str("component", "server").Logger(),
-		requestLog: log.With().Str("component", "server.requests").Logger(),
-		api:        api,
+		Config:       conf,
+		log:          log.With().Str("component", "server").Logger(),
+		requestLog:   log.With().Str("component", "server.requests").Logger(),
+		api:          api,
+		shutdownChan: make(chan struct{}),
 	}, nil
 }
 
 type server struct {
 	Config
-	log        zerolog.Logger
-	requestLog zerolog.Logger
-	api        API
+	log          zerolog.Logger
+	requestLog   zerolog.Logger
+	api          API
+	shutdownChan chan struct{}
 }
 
 // Run the HTTP server until the given context is cancelled.
@@ -59,6 +63,7 @@ func (s *server) Run(ctx context.Context) error {
 	mux.NotFound = http.HandlerFunc(s.notFound)
 	mux.POST("/environment", s.handleEnvironment)
 	mux.DELETE("/environment", s.handleReload)
+	mux.POST("/shutdown", s.handleShutdown)
 
 	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
 	httpServer := &http.Server{
@@ -95,6 +100,11 @@ func (s *server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		// Close server
 		s.log.Debug().Msg("Closing server...")
+		httpServer.Close()
+		return nil
+	case <-s.shutdownChan:
+		// Close server
+		s.log.Debug().Msg("Shutting down server...")
 		httpServer.Close()
 		return nil
 	}
