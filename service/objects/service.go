@@ -33,18 +33,20 @@ type service struct {
 	objects           map[mqp.ObjectAddress]Object
 	configuredObjects map[mqp.ObjectAddress]Object
 	topicPrefix       string
+	programVersion    string
 	log               zerolog.Logger
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, configs map[model.ObjectID]model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, programVersion string, configs map[model.ObjectID]model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
 		objects:           make(map[mqp.ObjectAddress]Object),
 		configuredObjects: make(map[mqp.ObjectAddress]Object),
 		topicPrefix:       topicPrefix,
+		programVersion:    programVersion,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for id, c := range configs {
@@ -170,7 +172,7 @@ func (s *service) sendPingMessages(ctx context.Context, mqttService mqtt.Service
 		msg := mqp.PingMessage{
 			GlobalMessageBase: mqp.NewGlobalMessageBase(s.moduleID, mqp.MessageModeActual),
 			ProtocolVersion:   mqp.ProtocolVersion,
-			Version:           "1.2.3",
+			Version:           s.programVersion,
 			Uptime:            int(time.Since(s.startTime).Seconds()),
 		}
 		delay := time.Second * 15

@@ -35,8 +35,9 @@ import (
 )
 
 const (
-	projectName       = "BinkyNet Local Worker"
-	defaultServerPort = 7129
+	projectName          = "BinkyNet Local Worker"
+	staticProjectVersion = "1.3.0"
+	defaultServerPort    = 7129
 )
 
 var (
@@ -78,11 +79,17 @@ func main() {
 	default:
 		Exitf("Unknown bridge type '%s' (rpi|opz)\n", bridgeType)
 	}
+	logger.Debug().Str("bridge-type", bridgeType).Msg("Created bridge")
 
+	version := projectVersion
+	if version == "dev" || version == "" {
+		version = staticProjectVersion
+	}
 	svc, err := service.NewService(service.Config{
-		DiscoveryPort: discoveryPort,
-		ServerPort:    serverPort,
-		ServerSecure:  false,
+		DiscoveryPort:  discoveryPort,
+		ServerPort:     serverPort,
+		ServerSecure:   false,
+		ProgramVersion: version,
 	}, service.Dependencies{
 		Log: logger,
 		MqttBuilder: func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error) {

@@ -42,9 +42,10 @@ type Service interface {
 }
 
 type Config struct {
-	DiscoveryPort int
-	ServerPort    int
-	ServerSecure  bool
+	DiscoveryPort  int
+	ServerPort     int
+	ServerSecure   bool
+	ProgramVersion string
 }
 
 type Dependencies struct {
@@ -190,6 +191,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 			w, err := worker.NewService(worker.Config{
 				LocalWorkerConfig: conf,
 				TopicPrefix:       topicPrefix,
+				ProgramVersion:    s.ProgramVersion,
 				ModuleID:          moduleID,
 			}, worker.Dependencies{
 				Log:         s.Log.With().Str("component", "worker").Logger(),
