@@ -19,9 +19,9 @@ package logging
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/binkynet/BinkyNet/mqtt"
 )
@@ -58,12 +58,22 @@ func (l *mqttLogger) Write(p []byte) (n int, err error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	select {
-	case l.queue <- p:
-		return len(p), nil
-	default:
-		return 0, fmt.Errorf("Queue full")
+	for attempt := 0; attempt < 10; attempt++ {
+		select {
+		case l.queue <- p:
+			return len(p), nil
+		default:
+			// Queue full; Take 1 out and try again
+			select {
+			case <-l.queue:
+				// Continue
+			default:
+				// Also continue
+			}
+		}
 	}
+	// Ignore errors
+	return len(p), nil
 }
 
 func (l *mqttLogger) Enable(enable bool) {
@@ -80,19 +90,26 @@ func (l *mqttLogger) SetDestination(topic string, mqttService mqtt.Service) {
 
 func (l *mqttLogger) run(ctx context.Context) {
 	for {
-		select {
-		case msg := <-l.queue:
-			if l.enable {
-				l.mutex.Lock()
-				mqttService := l.mqttService
-				topic := l.topic
-				l.mutex.Unlock()
-				if topic != "" && mqttService != nil {
-					mqttService.Publish(ctx, msg, topic, mqtt.QosDefault)
-				}
+		l.mutex.Lock()
+		mqttService := l.mqttService
+		topic := l.topic
+		enabled := l.enable
+		l.mutex.Unlock()
+
+		if enabled && topic != "" && mqttService != nil {
+			select {
+			case msg := <-l.queue:
+				mqttService.Publish(ctx, msg, topic, mqtt.QosDefault)
+			case <-ctx.Done():
+				return
 			}
-		case <-ctx.Done():
-			return
+		} else {
+			select {
+			case <-time.After(time.Second):
+				// Continue
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
