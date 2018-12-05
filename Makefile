@@ -16,7 +16,7 @@ BINNAME := bnLocalWorker
 BIN := $(BINDIR)/$(BINNAME)
 
 GOPATH := $(GOBUILDDIR)
-GOVERSION := 1.10.3-alpine
+GOVERSION := 1.11.2-alpine
 GOCACHEVOL := $(PROJECT)-gocache
 
 ifndef GOOS
