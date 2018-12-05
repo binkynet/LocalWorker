@@ -176,16 +176,15 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 	defer func() {
 		s.Bridge.SetGreenLED(false)
 		s.Bridge.SetRedLED(true)
-	}()
-
-	for {
 		if s.shutdown {
 			if err := environment.Reboot(s.Log); err != nil {
 				s.Log.Error().Err(err).Msg("Reboot failed")
 			}
 			os.Exit(1)
-			return nil
 		}
+	}()
+
+	for {
 		delay := time.Second
 
 		// Request configuration
