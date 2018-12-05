@@ -27,6 +27,7 @@ import (
 	restkit "github.com/pulcy/rest-kit"
 	"github.com/rs/zerolog"
 
+	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/pkg/netmanager"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/worker"
@@ -178,6 +179,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 
 	for {
 		if s.shutdown {
+			environment.Reboot(s.Log)
 			return nil
 		}
 		delay := time.Second
