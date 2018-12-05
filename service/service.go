@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -179,7 +180,10 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 
 	for {
 		if s.shutdown {
-			environment.Reboot(s.Log)
+			if err := environment.Reboot(s.Log); err != nil {
+				s.Log.Error().Err(err).Msg("Reboot failed")
+			}
+			os.Exit(1)
 			return nil
 		}
 		delay := time.Second

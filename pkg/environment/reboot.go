@@ -16,9 +16,15 @@
 
 package environment
 
-import "github.com/rs/zerolog"
+import (
+	"fmt"
+	"runtime"
+
+	"github.com/rs/zerolog"
+)
 
 // Reboot the machine.
 // Requires sufficient permission.
-func Reboot(log zerolog.Logger) {
+func Reboot(log zerolog.Logger) error {
+	return fmt.Errorf("Reboot not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
 }

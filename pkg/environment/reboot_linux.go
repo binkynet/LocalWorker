@@ -22,6 +22,6 @@ import (
 
 // Reboot the machine.
 // Requires sufficient permission.
-func Reboot(log zerolog.Logger) {
-	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+func Reboot(log zerolog.Logger) error {
+	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
