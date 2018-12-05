@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -148,9 +149,6 @@ func (s *service) Run(ctx context.Context) error {
 			return maskAny(fmt.Errorf("NetManager client has not been created"))
 		}
 		s.Log.Debug().Msg("worker registration completed")
-		logTopic := topicPrefix + "/log"
-		s.MQTTLogWriter.SetDestination(logTopic, mqttService)
-		s.Log.Debug().Str("topic", logTopic).Msg("Configured MQTT log output")
 
 		// Initialization done, run loop
 		workerCtx, workerCancel := context.WithCancel(ctx)
@@ -206,6 +204,10 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 			if conf.Alias != "" {
 				moduleID = conf.Alias
 			}
+			logTopic := path.Join(topicPrefix, moduleID, "log")
+			s.MQTTLogWriter.SetDestination(logTopic, mqttService)
+			s.Log.Debug().Str("topic", logTopic).Msg("Configured MQTT log output")
+
 			w, err := worker.NewService(worker.Config{
 				LocalWorkerConfig: conf,
 				TopicPrefix:       topicPrefix,
