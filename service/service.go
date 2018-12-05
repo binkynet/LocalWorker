@@ -29,6 +29,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
+	"github.com/binkynet/LocalWorker/pkg/logging"
 	"github.com/binkynet/LocalWorker/pkg/netmanager"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/worker"
@@ -43,6 +44,8 @@ type Service interface {
 	Reload(ctx context.Context) error
 	// Called to force a termination of the local worker.
 	Shutdown(ctx context.Context) error
+	// EnableMQTTLogger enables/disables logging to mqtt.
+	EnableMQTTLogger(enable bool)
 }
 
 type Config struct {
@@ -53,9 +56,10 @@ type Config struct {
 }
 
 type Dependencies struct {
-	Log         zerolog.Logger
-	Bridge      bridge.API
-	MqttBuilder func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error)
+	Log           zerolog.Logger
+	MQTTLogWriter logging.MQTTWriter
+	Bridge        bridge.API
+	MqttBuilder   func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error)
 }
 
 type service struct {
@@ -144,6 +148,7 @@ func (s *service) Run(ctx context.Context) error {
 			return maskAny(fmt.Errorf("NetManager client has not been created"))
 		}
 		s.Log.Debug().Msg("worker registration completed")
+		s.MQTTLogWriter.SetDestination(topicPrefix+"/log", mqttService)
 
 		// Initialization done, run loop
 		workerCtx, workerCancel := context.WithCancel(ctx)
@@ -300,4 +305,9 @@ func (s *service) Shutdown(ctx context.Context) error {
 		cancel()
 	}
 	return nil
+}
+
+// EnableMQTTLogger enables/disables logging to mqtt.
+func (s *service) EnableMQTTLogger(enable bool) {
+	s.MQTTLogWriter.Enable(enable)
 }

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 
 	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
@@ -17,7 +16,7 @@ func (s *server) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleEnvironment(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	ctx := context.Background()
+	ctx := r.Context()
 	var input discoveryAPI.WorkerEnvironment
 	if err := parseBody(r, &input); err != nil {
 		handleError(w, err)
@@ -32,7 +31,7 @@ func (s *server) handleEnvironment(w http.ResponseWriter, r *http.Request, ps ht
 }
 
 func (s *server) handleReload(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	ctx := context.Background()
+	ctx := r.Context()
 	err := s.api.Reload(ctx)
 	if err != nil {
 		handleError(w, err)
@@ -42,11 +41,21 @@ func (s *server) handleReload(w http.ResponseWriter, r *http.Request, ps httprou
 }
 
 func (s *server) handleShutdown(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	ctx := context.Background()
+	ctx := r.Context()
 	err := s.api.Shutdown(ctx)
 	if err != nil {
 		handleError(w, err)
 	} else {
 		sendJSON(w, http.StatusOK, nil)
 	}
+}
+
+func (s *server) handleEnableMQTTLogging(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	s.api.EnableMQTTLogger(true)
+	sendJSON(w, http.StatusOK, nil)
+}
+
+func (s *server) handleDisableMQTTLogging(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	s.api.EnableMQTTLogger(false)
+	sendJSON(w, http.StatusOK, nil)
 }

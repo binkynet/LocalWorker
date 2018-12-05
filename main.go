@@ -29,6 +29,7 @@ import (
 	"github.com/binkynet/BinkyNet/mqtt"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
+	"github.com/binkynet/LocalWorker/pkg/logging"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/server"
@@ -53,7 +54,9 @@ func main() {
 	var discoveryPort int
 	var bridgeType string
 
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
+	mqttLogOutput := logging.NewMQTTWriter(context.Background())
+	logOutput := logging.NewMultiWriter(zerolog.ConsoleWriter{Out: os.Stderr}, mqttLogOutput)
+	logger := zerolog.New(logOutput).With().Timestamp().Logger()
 	defaultBridgeType := environment.AutoDetectBridgeType(logger)
 
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
@@ -91,7 +94,8 @@ func main() {
 		ServerSecure:   false,
 		ProgramVersion: version,
 	}, service.Dependencies{
-		Log: logger,
+		Log:           logger,
+		MQTTLogWriter: mqttLogOutput,
 		MqttBuilder: func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error) {
 			result, err := mqtt.NewService(mqtt.Config{
 				Host:     env.Mqtt.Host,

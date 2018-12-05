@@ -27,6 +27,8 @@ type API interface {
 	Reload(ctx context.Context) error
 	// Called to force a termination of the local worker.
 	Shutdown(ctx context.Context) error
+	// EnableMQTTLogger enables/disables logging to mqtt.
+	EnableMQTTLogger(enable bool)
 }
 
 type Config struct {
@@ -62,6 +64,8 @@ func (s *server) Run(ctx context.Context) error {
 	mux.POST("/environment", s.handleEnvironment)
 	mux.DELETE("/environment", s.handleReload)
 	mux.POST("/shutdown", s.handleShutdown)
+	mux.POST("/logging/mqtt", s.handleEnableMQTTLogging)
+	mux.DELETE("/logging/mqtt", s.handleDisableMQTTLogging)
 
 	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
 	httpServer := &http.Server{
