@@ -88,10 +88,6 @@ func (l *mqttLogger) SetDestination(topic string, mqttService mqtt.Service) {
 	l.mqttService = mqttService
 }
 
-type logMsg struct {
-	Message string `json:"message"`
-}
-
 func (l *mqttLogger) run(ctx context.Context) {
 	for {
 		l.mutex.Lock()
@@ -103,7 +99,7 @@ func (l *mqttLogger) run(ctx context.Context) {
 		if enabled && topic != "" && mqttService != nil {
 			select {
 			case msg := <-l.queue:
-				mqttService.Publish(ctx, logMsg{Message: string(msg)}, topic, mqtt.QosDefault)
+				mqttService.Publish(ctx, msg, topic, mqtt.QosDefault)
 			case <-ctx.Done():
 				return
 			}
