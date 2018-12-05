@@ -41,6 +41,8 @@ func NewService(configs map[model.DeviceID]model.Device, bus *bridge.I2CBus, log
 		var dev Device
 		var err error
 		switch c.Type {
+		case model.DeviceTypeMCP23008:
+			dev, err = newMcp23008(c, bus)
 		case model.DeviceTypeMCP23017:
 			dev, err = newMcp23017(c, bus)
 		case model.DeviceTypePCA9685:
