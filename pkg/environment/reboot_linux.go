@@ -15,13 +15,12 @@
 package environment
 
 import (
-	"syscall"
-
 	"github.com/rs/zerolog"
+	"golang.org/x/sys/unix"
 )
 
 // Reboot the machine.
 // Requires sufficient permission.
 func Reboot(log zerolog.Logger) error {
-	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+	return unix.Reboot(unix.LINUX_REBOOT_CMD_RESTART)
 }
