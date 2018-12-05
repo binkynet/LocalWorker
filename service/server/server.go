@@ -41,20 +41,18 @@ func (c Config) createTLSConfig() (*tls.Config, error) {
 // NewServer creates a new server
 func NewServer(conf Config, api API, log zerolog.Logger) (Server, error) {
 	return &server{
-		Config:       conf,
-		log:          log.With().Str("component", "server").Logger(),
-		requestLog:   log.With().Str("component", "server.requests").Logger(),
-		api:          api,
-		shutdownChan: make(chan struct{}),
+		Config:     conf,
+		log:        log.With().Str("component", "server").Logger(),
+		requestLog: log.With().Str("component", "server.requests").Logger(),
+		api:        api,
 	}, nil
 }
 
 type server struct {
 	Config
-	log          zerolog.Logger
-	requestLog   zerolog.Logger
-	api          API
-	shutdownChan chan struct{}
+	log        zerolog.Logger
+	requestLog zerolog.Logger
+	api        API
 }
 
 // Run the HTTP server until the given context is cancelled.
@@ -100,11 +98,6 @@ func (s *server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		// Close server
 		s.log.Debug().Msg("Closing server...")
-		httpServer.Close()
-		return nil
-	case <-s.shutdownChan:
-		// Close server
-		s.log.Debug().Msg("Shutting down server...")
 		httpServer.Close()
 		return nil
 	}

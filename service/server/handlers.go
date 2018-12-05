@@ -49,5 +49,4 @@ func (s *server) handleShutdown(w http.ResponseWriter, r *http.Request, ps httpr
 	} else {
 		sendJSON(w, http.StatusOK, nil)
 	}
-	close(s.shutdownChan)
 }
