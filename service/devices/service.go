@@ -2,12 +2,16 @@ package devices
 
 import (
 	"context"
+	"fmt"
+	"path"
+	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/binkynet/BinkyNet/model"
+	"github.com/binkynet/BinkyNet/mqtt"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/pkg/errors"
 )
@@ -19,6 +23,8 @@ type Service interface {
 	DeviceByID(id model.DeviceID) (Device, bool)
 	// Configure is called once to put all devices in the desired state.
 	Configure(ctx context.Context) error
+	// Run the service until the given context is canceled.
+	Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error
 	// Close brings all devices back to a safe state.
 	Close() error
 }
@@ -27,6 +33,7 @@ type service struct {
 	log               zerolog.Logger
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
+	bus               *bridge.I2CBus
 }
 
 // NewService instantiates a new Service and Device's for the given
@@ -36,6 +43,7 @@ func NewService(configs map[model.DeviceID]model.Device, bus *bridge.I2CBus, log
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
+		bus:               bus,
 	}
 	for id, c := range configs {
 		var dev Device
@@ -86,6 +94,32 @@ func (s *service) Configure(ctx context.Context) error {
 	s.configuredDevices = configuredDevices
 	log.Info().Int("count", len(configuredDevices)).Msg("Configured devices")
 	return ae.AsError()
+}
+
+// Run the service until the given context is canceled.
+func (s *service) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
+	msg := struct {
+		Slaves []string `json:"slave-addresses"`
+	}{}
+	topic := path.Join(topicPrefix, "bus")
+	s.log.Debug().Str("topic", topic).Msg("Broadcasting bus addresses...")
+	for {
+		// Poll slave addresses
+		addrs := s.bus.DetectSlaveAddresses()
+		msg.Slaves = nil
+		for _, addr := range addrs {
+			msg.Slaves = append(msg.Slaves, fmt.Sprintf("0x%0x", addr))
+		}
+		mqttService.Publish(ctx, msg, topic, mqtt.QosDefault)
+
+		select {
+		case <-time.After(time.Minute):
+			// Continue
+		case <-ctx.Done():
+			// Context canceled
+			return nil
+		}
+	}
 }
 
 // Close brings all devices back to a safe state.

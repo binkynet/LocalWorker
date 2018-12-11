@@ -242,3 +242,14 @@ func (d *I2CBus) smbusAccess(readWrite byte, command byte, size uint32, data uin
 
 	return nil
 }
+
+// DetectSlaveAddresses probes the bus to detect available addresses.
+func (d *I2CBus) DetectSlaveAddresses() []byte {
+	var result []byte
+	for addr := 1; addr < 256; addr++ {
+		if _, err := d.ReadByteReg(byte(addr), 0); err == nil {
+			result = append(result, byte(addr))
+		}
+	}
+	return result
+}

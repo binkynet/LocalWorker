@@ -2,6 +2,9 @@ package worker
 
 import (
 	"context"
+	"path"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/model"
 	"github.com/binkynet/BinkyNet/mqtt"
@@ -88,10 +91,26 @@ func (s *service) Run(ctx context.Context) error {
 		// Log error
 		s.Log.Error().Err(err).Msg("Not all objects are configured")
 	}
-	// Run objects
-	s.Log.Debug().Msg("run objects")
-	if err := objService.Run(ctx, s.MQTTService); err != nil {
-		s.Log.Error().Err(err).Msg("Run failed")
+
+	// Run devices & objects
+	g, lctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		s.Log.Debug().Msg("run devices")
+		if err := devService.Run(lctx, s.MQTTService, path.Join(s.config.TopicPrefix, s.config.ModuleID)); err != nil {
+			s.Log.Error().Err(err).Msg("Run failed")
+			return maskAny(err)
+		}
+		return nil
+	})
+	g.Go(func() error {
+		s.Log.Debug().Msg("run objects")
+		if err := objService.Run(lctx, s.MQTTService); err != nil {
+			s.Log.Error().Err(err).Msg("Run failed")
+			return maskAny(err)
+		}
+		return nil
+	})
+	if err := g.Wait(); err != nil {
 		return maskAny(err)
 	}
 

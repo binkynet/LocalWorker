@@ -105,18 +105,6 @@ func (s *service) Run(ctx context.Context) error {
 	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
 	s.Bridge.BlinkRedLED(time.Millisecond * 250)
 
-	// Open bus
-	var err error
-	/*bus, err := s.Bridge.I2CBus()
-	if err != nil {
-		s.Log.Error().Err(err).Msg("Failed to open I2CBus")
-	} else {
-		// Detect local slaves
-		/*s.Log.Info().Msg("Detecting local slaves")
-		addrs := bus.DetectSlaveAddresses()
-		s.Log.Info().Msgf("Detected %d local slaves: %v", len(addrs), addrs)
-	}*/
-
 	for {
 		// Register worker
 		s.Bridge.BlinkGreenLED(time.Millisecond * 250)
@@ -127,7 +115,7 @@ func (s *service) Run(ctx context.Context) error {
 		s.mutex.Lock()
 		s.registrationCancel = registrationCancel
 		s.mutex.Unlock()
-		err = s.registerWorker(registrationCtx, s.hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
+		err := s.registerWorker(registrationCtx, s.hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
 		registrationCancel()
 		if err != nil {
 			s.Log.Error().Err(err).Msg("registerWorker failed")
