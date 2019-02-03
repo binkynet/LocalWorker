@@ -3,8 +3,6 @@ ROOTDIR := $(shell pwd)
 VERSION := $(shell cat VERSION)
 COMMIT := $(shell git rev-parse --short HEAD)
 
-BINDIR := $(ROOTDIR)/bin
-
 ORGPATH := github.com/binkynet
 REPONAME := $(PROJECT)
 REPOPATH := $(ORGPATH)/$(REPONAME)
@@ -17,7 +15,7 @@ SOURCES := $(shell find . -name '*.go')
 all: binaries
 
 clean:
-	rm -Rf $(BINDIR)
+	rm -Rf $(ROOTDIR)/bin
 
 bootstrap:
 	go get github.com/mitchellh/gox
