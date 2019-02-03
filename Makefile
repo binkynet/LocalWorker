@@ -26,7 +26,7 @@ binaries: $(SOURCES)
 	CGO_ENABLED=0 gox \
 		-osarch="linux/amd64 linux/arm darwin/amd64" \
 		-ldflags="-X main.projectVersion=$(VERSION) -X main.projectBuild=$(COMMIT)" \
-		-output="bin/{{.OS}}/{{.Arch}}/$(PROJECT)" \
+		-output="bin/{{.OS}}/{{.Arch}}/$(BINNAME)" \
 		-tags="netgo" \
 		./...
 
