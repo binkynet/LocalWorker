@@ -1,5 +1,6 @@
 FROM scratch
+ARG GOARCH=amd64
 
-ADD ./bnLocalWorker /app/
+ADD bin/${GOARCH}/bnLocalWorker /app/
 
 ENTRYPOINT ["/app/bnLocalWorker"]

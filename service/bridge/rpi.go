@@ -88,11 +88,12 @@ type piBridge struct {
 // NewRaspberryPiBridge implements the bridge for Raspberry PI's
 func NewRaspberryPiBridge() (API, error) {
 	activeLow := true
-	greenLed, err := gpio.Output(greenLedPin, activeLow)
+	initialValue := false
+	greenLed, err := gpio.Output(greenLedPin, activeLow, initialValue)
 	if err != nil {
 		return nil, maskAny(err)
 	}
-	redLed, err := gpio.Output(redLedPin, activeLow)
+	redLed, err := gpio.Output(redLedPin, activeLow, initialValue)
 	if err != nil {
 		return nil, maskAny(err)
 	}
