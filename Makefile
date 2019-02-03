@@ -9,7 +9,6 @@ ORGPATH := github.com/binkynet
 REPONAME := $(PROJECT)
 REPOPATH := $(ORGPATH)/$(REPONAME)
 BINNAME := bnLocalWorker
-BIN := $(BINDIR)/$(BINNAME)
 
 SOURCES := $(shell find . -name '*.go')
 
@@ -18,7 +17,7 @@ SOURCES := $(shell find . -name '*.go')
 all: binaries
 
 clean:
-	rm -Rf $(BIN)
+	rm -Rf $(BINDIR)
 
 bootstrap:
 	go get github.com/mitchellh/gox
