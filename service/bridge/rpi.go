@@ -82,7 +82,7 @@ type piBridge struct {
 	mutex    sync.Mutex
 	greenLed statusLed
 	redLed   statusLed
-	bus      *I2CBus
+	bus      I2CBus
 }
 
 // NewRaspberryPiBridge implements the bridge for Raspberry PI's
@@ -136,7 +136,7 @@ func (p *piBridge) BlinkRedLED(delay time.Duration) error {
 }
 
 // Open the I2C bus
-func (p *piBridge) I2CBus() (*I2CBus, error) {
+func (p *piBridge) I2CBus() (I2CBus, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 

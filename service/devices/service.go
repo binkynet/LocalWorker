@@ -45,12 +45,12 @@ type service struct {
 	log               zerolog.Logger
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
-	bus               *bridge.I2CBus
+	bus               bridge.I2CBus
 }
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(configs []*model.Device, bus *bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),

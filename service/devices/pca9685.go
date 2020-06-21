@@ -27,7 +27,7 @@ import (
 
 type pca9685 struct {
 	config  model.Device
-	bus     *bridge.I2CBus
+	bus     bridge.I2CBus
 	address byte
 }
 
@@ -44,7 +44,7 @@ const (
 )
 
 // newPCA9685 creates a PWM instance for a pca9685 device with given config.
-func newPCA9685(config model.Device, bus *bridge.I2CBus) (PWM, error) {
+func newPCA9685(config model.Device, bus bridge.I2CBus) (PWM, error) {
 	if config.Type != model.DeviceTypePCA9685 {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}

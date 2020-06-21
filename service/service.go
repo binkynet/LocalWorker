@@ -100,6 +100,10 @@ func (s *service) Run(ctx context.Context) error {
 	var lwConfigInfo *api.ServiceInfo
 	var lwControlInfo *api.ServiceInfo
 
+	// Start discovery listeners
+	go s.lwConfigListener.Run(ctx)
+	go s.lwControlListener.Run(ctx)
+
 	for {
 		// Register worker
 		s.Bridge.BlinkGreenLED(time.Millisecond * 250)
@@ -109,9 +113,11 @@ func (s *service) Run(ctx context.Context) error {
 		case info := <-s.lwConfigChanges:
 			// LocalWorkerConfigService discovery change detected
 			lwConfigInfo = &info
+			s.Log.Debug().Msg("LocalWorkerConfig discovery change received")
 		case info := <-s.lwControlChanges:
 			// LocalWorkerControlService discovery change detected
 			lwControlInfo = &info
+			s.Log.Debug().Msg("LocalWorkerControl discovery change received")
 		case <-ctx.Done():
 			// Context canceled
 			return nil

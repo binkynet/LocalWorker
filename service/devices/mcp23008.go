@@ -28,7 +28,7 @@ import (
 
 type mcp23008 struct {
 	config  model.Device
-	bus     *bridge.I2CBus
+	bus     bridge.I2CBus
 	address byte
 	iodir   byte
 	value   byte
@@ -50,7 +50,7 @@ const (
 )
 
 // newMcp23008 creates a GPIO instance for a mcp23008 device with given config.
-func newMcp23008(config model.Device, bus *bridge.I2CBus) (GPIO, error) {
+func newMcp23008(config model.Device, bus bridge.I2CBus) (GPIO, error) {
 	if config.Type != model.DeviceTypeMCP23008 {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}

@@ -54,7 +54,7 @@ func main() {
 	defaultBridgeType := environment.AutoDetectBridgeType(logger)
 
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
-	pflag.StringVarP(&bridgeType, "bridge", "b", defaultBridgeType, "Type of bridge to use (rpi|opz)")
+	pflag.StringVarP(&bridgeType, "bridge", "b", defaultBridgeType, "Type of bridge to use (rpi|opz|stub)")
 	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the GRPC server will listen on")
 	pflag.IntVar(&grpcPort, "port", defaultGrpcPort, "Port the GRPC server will listen on")
 	pflag.Parse()
@@ -72,8 +72,10 @@ func main() {
 		if err != nil {
 			Exitf("Failed to initialize Orange Pi Zero Bridge: %v\n", err)
 		}
+	case "stub":
+		br = bridge.NewStub()
 	default:
-		Exitf("Unknown bridge type '%s' (rpi|opz)\n", bridgeType)
+		Exitf("Unknown bridge type '%s' (rpi|opz|stub)\n", bridgeType)
 	}
 	logger.Debug().Str("bridge-type", bridgeType).Msg("Created bridge")
 

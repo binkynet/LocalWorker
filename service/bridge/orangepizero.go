@@ -21,7 +21,7 @@ import (
 
 type orangepizeroBridge struct {
 	mutex sync.Mutex
-	bus   *I2CBus
+	bus   I2CBus
 }
 
 // NewOrangePIZeroBridge implements the bridge for an Orange PI Zero
@@ -50,7 +50,7 @@ func (p *orangepizeroBridge) BlinkRedLED(delay time.Duration) error {
 }
 
 // Open the I2C bus
-func (p *orangepizeroBridge) I2CBus() (*I2CBus, error) {
+func (p *orangepizeroBridge) I2CBus() (I2CBus, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
