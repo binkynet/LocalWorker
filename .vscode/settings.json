@@ -26,5 +26,6 @@
             ""
         ]
     },
-    "go.gopath": "${workspaceRoot}/.gobuild"
+    "go.gopath": "${workspaceRoot}/.gobuild",
+    "git.ignoreLimitWarning": true
 }

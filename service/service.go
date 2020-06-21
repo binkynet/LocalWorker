@@ -16,22 +16,19 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"math/rand"
+	"net"
 	"os"
-	"path"
+	"strconv"
 	"sync"
 	"time"
 
-	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
-	"github.com/binkynet/BinkyNet/mqtt"
+	api "github.com/binkynet/BinkyNet/apis/v1"
+	discovery "github.com/binkynet/BinkyNet/discovery"
 	"github.com/pkg/errors"
-	restkit "github.com/pulcy/rest-kit"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
-	"github.com/binkynet/LocalWorker/pkg/logging"
-	"github.com/binkynet/LocalWorker/pkg/netmanager"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/worker"
 )
@@ -39,42 +36,30 @@ import (
 type Service interface {
 	// Run the worker until the given context is cancelled.
 	Run(ctx context.Context) error
-	// Called to relay environment information.
-	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
-	// Called to force a complete reload of the worker.
-	Reload(ctx context.Context) error
-	// Called to force a termination of the local worker.
-	Shutdown(ctx context.Context) error
-	// EnableMQTTLogger enables/disables logging to mqtt.
-	EnableMQTTLogger(enable bool)
 }
 
 type Config struct {
-	DiscoveryPort  int
-	ServerPort     int
-	ServerSecure   bool
 	ProgramVersion string
 }
 
 type Dependencies struct {
-	Log           zerolog.Logger
-	MQTTLogWriter logging.MQTTWriter
-	Bridge        bridge.API
-	MqttBuilder   func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error)
+	Log    zerolog.Logger
+	Bridge bridge.API
 }
 
 type service struct {
 	Config
 	Dependencies
 
-	mutex              sync.Mutex
-	hostID             string
-	registrationCancel func()
-	workerCancel       func()
-	mqttService        mqtt.Service
-	netManagerClient   *netmanager.Client
-	topicPrefix        string
-	shutdown           bool
+	mutex        sync.Mutex
+	hostID       string
+	workerCancel func()
+	shutdown     bool
+
+	lwConfigListener  *discovery.ServiceListener
+	lwControlListener *discovery.ServiceListener
+	lwConfigChanges   chan api.ServiceInfo
+	lwControlChanges  chan api.ServiceInfo
 }
 
 // NewService creates a Service instance and returns it.
@@ -85,11 +70,16 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create host ID")
 	}
-	return &service{
-		Config:       conf,
-		Dependencies: deps,
-		hostID:       hostID,
-	}, nil
+	s := &service{
+		Config:           conf,
+		Dependencies:     deps,
+		hostID:           hostID,
+		lwConfigChanges:  make(chan api.ServiceInfo),
+		lwControlChanges: make(chan api.ServiceInfo),
+	}
+	s.lwConfigListener = discovery.NewServiceListener(deps.Log, api.ServiceTypeLocalWorkerConfig, false, s.lwConfigChanged)
+	s.lwControlListener = discovery.NewServiceListener(deps.Log, api.ServiceTypeLocalWorkerControl, false, s.lwControlChanged)
+	return s, nil
 }
 
 // Run initialize the local worker and then continues
@@ -99,55 +89,74 @@ func (s *service) Run(ctx context.Context) error {
 	defer s.Bridge.Close()
 
 	// Create host ID
-	s.Log.Info().Str("id", s.hostID).Msg("Found host ID")
+	s.Log.Info().
+		Str("id", s.hostID).
+		Msg("Found host ID")
 
 	// Fetch local slave configuration
 	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
 	s.Bridge.BlinkRedLED(time.Millisecond * 250)
+
+	var lwConfigInfo *api.ServiceInfo
+	var lwControlInfo *api.ServiceInfo
 
 	for {
 		// Register worker
 		s.Bridge.BlinkGreenLED(time.Millisecond * 250)
 		s.Bridge.SetRedLED(false)
 
-		s.Log.Debug().Msg("registering worker...")
-		registrationCtx, registrationCancel := context.WithCancel(ctx)
-		s.mutex.Lock()
-		s.registrationCancel = registrationCancel
-		s.mutex.Unlock()
-		err := s.registerWorker(registrationCtx, s.hostID, s.DiscoveryPort, s.ServerPort, s.ServerSecure)
-		registrationCancel()
-		if err != nil {
-			s.Log.Error().Err(err).Msg("registerWorker failed")
-			return maskAny(err)
+		select {
+		case info := <-s.lwConfigChanges:
+			// LocalWorkerConfigService discovery change detected
+			lwConfigInfo = &info
+		case info := <-s.lwControlChanges:
+			// LocalWorkerControlService discovery change detected
+			lwControlInfo = &info
+		case <-ctx.Done():
+			// Context canceled
+			return nil
+		case <-time.After(time.Second * 2):
+			// Retry
 		}
 
-		s.mutex.Lock()
-		mqttService := s.mqttService
-		netManagerClient := s.netManagerClient
-		topicPrefix := s.topicPrefix
-		s.mqttService = nil
-		s.netManagerClient = nil
-		s.topicPrefix = ""
-		s.mutex.Unlock()
-		if mqttService == nil {
-			return maskAny(fmt.Errorf("MQTT service has not been created"))
+		// Do we have discovery info for lwConfig & lwControl ?
+		if lwConfigInfo == nil || lwControlInfo == nil {
+			// Wait for more info
+			continue
 		}
-		if netManagerClient == nil {
-			return maskAny(fmt.Errorf("NetManager client has not been created"))
-		}
-		s.Log.Debug().Msg("worker registration completed")
 
-		// Initialization done, run loop
-		workerCtx, workerCancel := context.WithCancel(ctx)
-		s.mutex.Lock()
-		s.workerCancel = workerCancel
-		s.mutex.Unlock()
-		err = s.runWorkerInEnvironment(workerCtx, netManagerClient, mqttService, topicPrefix)
-		workerCancel()
-		if err != nil {
-			s.Log.Error().Err(err).Msg("registerWorker failed")
-			return maskAny(err)
+		if err := func() error {
+			// Dialog connection to lwConfig
+			lwConfigConn, err := dialConn(lwConfigInfo)
+			if err != nil {
+				s.Log.Warn().Err(err).Msg("Failed to dial LocalWorkerConfig service")
+				return nil
+			}
+			defer lwConfigConn.Close()
+			lwConfigClient := api.NewLocalWorkerConfigServiceClient(lwConfigConn)
+			// Dialog connection to lwControl
+			lwControlConn, err := dialConn(lwControlInfo)
+			if err != nil {
+				s.Log.Warn().Err(err).Msg("Failed to dial LocalWorkerControl service")
+				return nil
+			}
+			defer lwControlConn.Close()
+			lwControlClient := api.NewLocalWorkerControlServiceClient(lwControlConn)
+
+			// Initialization done, run loop
+			workerCtx, workerCancel := context.WithCancel(ctx)
+			s.mutex.Lock()
+			s.workerCancel = workerCancel
+			s.mutex.Unlock()
+			err = s.runWorkerInEnvironment(workerCtx, lwConfigClient, lwControlClient)
+			workerCancel()
+			if err != nil {
+				s.Log.Error().Err(err).Msg("registerWorker failed")
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return err
 		}
 
 		// If context cancelled, return
@@ -157,11 +166,31 @@ func (s *service) Run(ctx context.Context) error {
 	}
 }
 
-// Run the worker until the given context is cancelled.
-func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *netmanager.Client,
-	mqttService mqtt.Service, topicPrefix string) error {
-	defer mqttService.Close()
+// LocalWorkerConfigService has changed
+func (s *service) lwConfigChanged(info api.ServiceInfo) {
+	s.mutex.Lock()
+	cancel := s.workerCancel
+	s.mutex.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	s.lwConfigChanges <- info
+}
 
+// LocalWorkerControlService has changed
+func (s *service) lwControlChanged(info api.ServiceInfo) {
+	s.mutex.Lock()
+	cancel := s.workerCancel
+	s.mutex.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	s.lwControlChanges <- info
+}
+
+// Run the worker until the given context is cancelled.
+func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api.LocalWorkerConfigServiceClient,
+	lwControlClient api.LocalWorkerControlServiceClient) error {
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
@@ -177,13 +206,23 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 		}
 	}()
 
+	// Request configuration stream
+	confStream, err := lwConfigClient.GetConfig(ctx, &api.LocalWorkerInfo{
+		Id:          s.hostID,
+		Description: "Local worker",
+		Version:     s.ProgramVersion,
+		Uptime:      0, // TODO
+	})
+	if err != nil {
+		return err
+	}
 	for {
 		delay := time.Second
 
-		// Request configuration
-		conf, err := netManagerClient.GetWorkerConfig(ctx, s.hostID)
+		// Read configuration
+		conf, err := confStream.Recv()
 		if err != nil {
-			s.Log.Error().Err(err).Msg("Failed to request configuration")
+			s.Log.Error().Err(err).Msg("Failed to read configuration")
 			// Wait a bit and then retry
 		} else {
 			s.Log.Debug().Interface("config", conf).Msg("received worker config")
@@ -192,26 +231,21 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 			if conf.Alias != "" {
 				moduleID = conf.Alias
 			}
-			logTopic := path.Join(topicPrefix, moduleID, "log")
-			s.MQTTLogWriter.SetDestination(logTopic, mqttService)
-			s.Log.Debug().Str("topic", logTopic).Msg("Configured MQTT log output")
 
 			w, err := worker.NewService(worker.Config{
-				LocalWorkerConfig: conf,
-				TopicPrefix:       topicPrefix,
+				LocalWorkerConfig: *conf,
 				ProgramVersion:    s.ProgramVersion,
 				ModuleID:          moduleID,
 			}, worker.Dependencies{
-				Log:         s.Log.With().Str("component", "worker").Logger(),
-				Bridge:      s.Bridge,
-				MQTTService: mqttService,
+				Log:    s.Log.With().Str("component", "worker").Logger(),
+				Bridge: s.Bridge,
 			})
 			if err != nil {
 				s.Log.Error().Err(err).Msg("Failed to create worker")
 				// Wait a bit and then retry
 			} else {
 				// Run worker
-				if err := w.Run(ctx); err != nil {
+				if err := w.Run(ctx, lwControlClient); err != nil {
 					s.Log.Error().Err(err).Msg("Failed to run worker")
 				} else {
 					s.Log.Info().Err(err).Msg("Worker ended")
@@ -229,78 +263,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, netManagerClient *
 	}
 }
 
-// Called to relay environment information.
-func (s *service) Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error {
-	log := s.Log.With().
-		Str("endpoint", input.Manager.Endpoint).
-		Str("mqtt-host", input.Mqtt.Host).
-		Int("mqtt-port", input.Mqtt.Port).
-		Logger()
-	log.Info().Msg("Environment called")
-
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	log.Debug().Msg("creating network manager client")
-	netManagerClient, err := netmanager.NewClient(input.Manager.Endpoint)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create MQTT service")
-		return maskAny(restkit.InternalServerError(err.Error(), 0))
-	}
-
-	log.Debug().Msg("creating random MQTT client ID")
-	buf := make([]byte, 8)
-	rand.Read(buf)
-	clientID := fmt.Sprintf("%s_%x", s.hostID, buf)
-	log.Debug().Str("client-id", clientID).Msg("creating MQTT service")
-	mqttSvc, err := s.MqttBuilder(input, clientID)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create MQTT service")
-		return maskAny(restkit.InternalServerError(err.Error(), 0))
-	}
-	if s.mqttService != nil {
-		s.mqttService.Close()
-	}
-	s.netManagerClient = netManagerClient
-	s.mqttService = mqttSvc
-	s.topicPrefix = input.Mqtt.TopicPrefix
-
-	if cancel := s.registrationCancel; cancel != nil {
-		log.Debug().Msg("Canceling registration")
-		cancel()
-	}
-	return nil
-}
-
-// Called to force a complete reload of the worker.
-func (s *service) Reload(ctx context.Context) error {
-	s.Log.Info().Msg("Reload called")
-
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	if cancel := s.workerCancel; cancel != nil {
-		cancel()
-	}
-	return nil
-}
-
-// Called to force a complete termination of the worker.
-func (s *service) Shutdown(ctx context.Context) error {
-	s.Log.Info().Msg("Shutdown called")
-
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.shutdown = true
-
-	if cancel := s.workerCancel; cancel != nil {
-		cancel()
-	}
-	return nil
-}
-
-// EnableMQTTLogger enables/disables logging to mqtt.
-func (s *service) EnableMQTTLogger(enable bool) {
-	s.MQTTLogWriter.Enable(enable)
-	s.Log.Info().Bool("enable", enable).Msg("Toggle MQTT logging")
+func dialConn(info *api.ServiceInfo) (*grpc.ClientConn, error) {
+	address := net.JoinHostPort(info.GetApiAddress(), strconv.Itoa(int(info.GetApiPort())))
+	return grpc.Dial(address)
 }

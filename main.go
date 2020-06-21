@@ -25,11 +25,7 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
-	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
-	"github.com/binkynet/BinkyNet/mqtt"
-
 	"github.com/binkynet/LocalWorker/pkg/environment"
-	"github.com/binkynet/LocalWorker/pkg/logging"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	"github.com/binkynet/LocalWorker/service/server"
@@ -37,8 +33,8 @@ import (
 
 const (
 	projectName          = "BinkyNet Local Worker"
-	staticProjectVersion = "1.3.0"
-	defaultServerPort    = 7129
+	staticProjectVersion = "1.4.0"
+	defaultGrpcPort      = 7129
 )
 
 var (
@@ -50,20 +46,17 @@ var (
 func main() {
 	var levelFlag string
 	var serverHost string
-	var serverPort int
-	var discoveryPort int
+	var grpcPort int
 	var bridgeType string
 
-	mqttLogOutput := logging.NewMQTTWriter(context.Background())
-	logOutput := logging.NewMultiWriter(zerolog.ConsoleWriter{Out: os.Stderr}, mqttLogOutput)
+	logOutput := zerolog.ConsoleWriter{Out: os.Stderr}
 	logger := zerolog.New(logOutput).With().Timestamp().Logger()
 	defaultBridgeType := environment.AutoDetectBridgeType(logger)
 
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
 	pflag.StringVarP(&bridgeType, "bridge", "b", defaultBridgeType, "Type of bridge to use (rpi|opz)")
-	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the HTTP server will listen on")
-	pflag.IntVar(&serverPort, "port", defaultServerPort, "Port the HTTP server will listen on")
-	pflag.IntVar(&discoveryPort, "discovery-port", discoveryAPI.DefaultPort, "Port the NetManager discovery is listening on")
+	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the GRPC server will listen on")
+	pflag.IntVar(&grpcPort, "port", defaultGrpcPort, "Port the GRPC server will listen on")
 	pflag.Parse()
 
 	var br bridge.API
@@ -89,26 +82,9 @@ func main() {
 		version = staticProjectVersion
 	}
 	svc, err := service.NewService(service.Config{
-		DiscoveryPort:  discoveryPort,
-		ServerPort:     serverPort,
-		ServerSecure:   false,
 		ProgramVersion: version,
 	}, service.Dependencies{
-		Log:           logger,
-		MQTTLogWriter: mqttLogOutput,
-		MqttBuilder: func(env discoveryAPI.WorkerEnvironment, clientID string) (mqtt.Service, error) {
-			result, err := mqtt.NewService(mqtt.Config{
-				Host:     env.Mqtt.Host,
-				Port:     env.Mqtt.Port,
-				UserName: env.Mqtt.UserName,
-				Password: env.Mqtt.Password,
-				ClientID: clientID,
-			}, logger)
-			if err != nil {
-				return nil, maskAny(err)
-			}
-			return result, nil
-		},
+		Log:    logger,
 		Bridge: br,
 	})
 	if err != nil {
@@ -116,8 +92,8 @@ func main() {
 	}
 
 	httpServer, err := server.NewServer(server.Config{
-		Host: serverHost,
-		Port: serverPort,
+		Host:     serverHost,
+		GRPCPort: grpcPort,
 	}, svc, logger)
 	if err != nil {
 		Exitf("Failed to initialize Server: %v\n", err)

@@ -1,31 +1,40 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package objects
 
 import (
 	"context"
 
-	"github.com/binkynet/BinkyNet/mqp"
-	"github.com/binkynet/BinkyNet/mqtt"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 )
 
 var (
 	switchType = &ObjectType{
-		TopicSuffix: mqp.SwitchMessage{}.TopicSuffix(),
-		NextMessage: func(ctx context.Context, log zerolog.Logger, subscription mqtt.Subscription, service Service) error {
-			var msg mqp.SwitchMessage
-			msgID, err := subscription.NextMsg(ctx, &msg)
-			if err != nil {
-				log.Debug().Err(err).Msg("NextMsg failed")
-				return maskAny(err)
-			}
-			if msg.IsRequest() {
-				log = log.With().Int("msg-id", msgID).Str("address", string(msg.Address)).Logger()
+		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
+			cancel := requests.RegisterSwitchRequestReceiver(func(msg model.Switch) error {
+				log := log.With().Str("address", string(msg.Address)).Logger()
 				//log.Debug().Msg("got message")
 				if obj, found := service.ObjectByAddress(msg.Address); found {
 					if x, ok := obj.(switchAPI); ok {
 						if err := x.ProcessMessage(ctx, msg); err != nil {
-							return maskAny(err)
+							return err
 						}
 					} else {
 						return errors.Errorf("Expected object of type switchAPI")
@@ -33,9 +42,10 @@ var (
 				} else {
 					log.Debug().Msg("object not found")
 				}
-			} else {
-				log.Debug().Msg("ignoring non-request message")
-			}
+				return nil
+			})
+			defer cancel()
+			<-ctx.Done()
 			return nil
 		},
 	}
@@ -43,5 +53,5 @@ var (
 
 type switchAPI interface {
 	// ProcessMessage acts upons a given request.
-	ProcessMessage(ctx context.Context, r mqp.SwitchMessage) error
+	ProcessMessage(ctx context.Context, r model.Switch) error
 }
