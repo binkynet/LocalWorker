@@ -271,5 +271,9 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 
 func dialConn(info *api.ServiceInfo) (*grpc.ClientConn, error) {
 	address := net.JoinHostPort(info.GetApiAddress(), strconv.Itoa(int(info.GetApiPort())))
-	return grpc.Dial(address)
+	var opts []grpc.DialOption
+	if !info.Secure {
+		opts = append(opts, grpc.WithInsecure())
+	}
+	return grpc.Dial(address, opts...)
 }
