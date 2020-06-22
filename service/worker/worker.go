@@ -21,7 +21,6 @@ type Service interface {
 
 type Config struct {
 	model.LocalWorkerConfig
-	TopicPrefix    string
 	ProgramVersion string
 	ModuleID       string
 }
@@ -76,7 +75,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 
 	// Build objects service
 	s.Log.Debug().Msg("build objects service")
-	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, s.config.TopicPrefix, devService, s.Log.With().Str("component", "worker.objects").Logger())
+	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, devService, s.Log.With().Str("component", "worker.objects").Logger())
 	if err != nil {
 		return maskAny(err)
 	}

@@ -46,20 +46,18 @@ type service struct {
 	moduleID          string
 	objects           map[model.ObjectAddress]Object
 	configuredObjects map[model.ObjectAddress]Object
-	topicPrefix       string
 	programVersion    string
 	log               zerolog.Logger
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, programVersion string, configs []*model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, programVersion string, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
 		objects:           make(map[model.ObjectAddress]Object),
 		configuredObjects: make(map[model.ObjectAddress]Object),
-		topicPrefix:       topicPrefix,
 		programVersion:    programVersion,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
@@ -159,19 +157,22 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 			})
 
 			// Run the message loop for the type of object (if not running already)
-			objType := obj.Type()
-			if _, found := visitedTypes[objType]; found {
-				// Type already running
-				continue
-			}
-			visitedTypes[objType] = struct{}{}
-			g.Go(func() error {
-				s.log.Debug().Str("type", s.topicPrefix).Msg("starting object type")
-				if err := objType.Run(ctx, s.log, requests, statuses, s, s.moduleID); err != nil {
-					return err
+			if objType := obj.Type(); objType != nil {
+				if _, found := visitedTypes[objType]; found {
+					// Type already running
+					continue
 				}
-				return nil
-			})
+				visitedTypes[objType] = struct{}{}
+				if objType.Run != nil {
+					g.Go(func() error {
+						s.log.Debug().Msg("starting object type")
+						if err := objType.Run(ctx, s.log, requests, statuses, s, s.moduleID); err != nil {
+							return err
+						}
+						return nil
+					})
+				}
+			}
 		}
 		if err := g.Wait(); err != nil {
 			s.log.Warn().Err(err).Msg("Run Objects failed")
