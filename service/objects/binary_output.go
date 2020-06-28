@@ -118,9 +118,10 @@ func (o *binaryOutput) Run(ctx context.Context, requests RequestService, statuse
 
 // ProcessMessage acts upons a given request.
 func (o *binaryOutput) ProcessMessage(ctx context.Context, r model.Output) error {
-	log := o.log.With().Int32("value", r.Value).Logger()
+	value := r.GetRequest().GetValue()
+	log := o.log.With().Int32("value", value).Logger()
 	log.Debug().Msg("got request")
-	if err := o.outputDevice.Set(ctx, o.pin, int32ToBool(r.Value)); err != nil {
+	if err := o.outputDevice.Set(ctx, o.pin, int32ToBool(value)); err != nil {
 		log.Debug().Err(err).Msg("GPIO.set failed")
 		return err
 	}
@@ -128,6 +129,6 @@ func (o *binaryOutput) ProcessMessage(ctx context.Context, r model.Output) error
 }
 
 // ProcessPowerMessage acts upons a given power message.
-func (o *binaryOutput) ProcessPowerMessage(ctx context.Context, m model.Power) error {
+func (o *binaryOutput) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
 	return nil // TODO
 }

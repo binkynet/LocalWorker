@@ -116,7 +116,9 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 				log.Debug().Bool("force", force).Msg("change detected")
 				actual := model.Sensor{
 					Address: o.address,
-					Value:   boolToInt32(value),
+					Actual: &model.SensorState{
+						Value: boolToInt32(value),
+					},
 				}
 				statuses.PublishSensorActual(actual)
 				changes++
@@ -135,8 +137,8 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 }
 
 // ProcessPowerMessage acts upons a given power message.
-func (o *binarySensor) ProcessPowerMessage(ctx context.Context, m model.Power) error {
-	if m.Enabled {
+func (o *binarySensor) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
+	if m.GetEnabled() {
 		atomic.StoreInt32(&o.sendNow, 1)
 	}
 	return nil

@@ -147,8 +147,13 @@ func (o *relaySwitch) Run(ctx context.Context, requests RequestService, statuses
 		o.mutex.Unlock()
 		if sendActualNeeded {
 			msg := model.Switch{
-				Address:   o.address,
-				Direction: o.requestedDirection,
+				Address: o.address,
+				Request: &model.SwitchState{
+					Direction: o.requestedDirection,
+				},
+				Actual: &model.SwitchState{
+					Direction: o.requestedDirection,
+				},
 			}
 			statuses.PublishSwitchActual(msg)
 		}
@@ -168,12 +173,13 @@ func (o *relaySwitch) Run(ctx context.Context, requests RequestService, statuses
 
 // ProcessMessage acts upons a given request.
 func (o *relaySwitch) ProcessMessage(ctx context.Context, r model.Switch) error {
-	log := o.log.With().Str("direction", string(r.Direction)).Logger()
+	direction := r.GetRequest().GetDirection()
+	log := o.log.With().Str("direction", string(direction)).Logger()
 	log.Debug().Msg("got request")
 
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
-	if err := o.switchTo(ctx, r.Direction); err != nil {
+	if err := o.switchTo(ctx, direction); err != nil {
 		return err
 	}
 
@@ -208,8 +214,8 @@ func (o *relaySwitch) switchTo(ctx context.Context, direction model.SwitchDirect
 }
 
 // ProcessPowerMessage acts upons a given power message.
-func (o *relaySwitch) ProcessPowerMessage(ctx context.Context, m model.Power) error {
-	if m.Enabled {
+func (o *relaySwitch) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
+	if m.GetEnabled() {
 		atomic.StoreInt32(&o.sendActualNeeded, 1)
 	}
 	return nil

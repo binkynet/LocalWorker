@@ -33,7 +33,7 @@ type Object interface {
 	// Run the object until the given context is cancelled.
 	Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error
 	// ProcessPowerMessage acts upons a given power message.
-	ProcessPowerMessage(ctx context.Context, m api.Power) error
+	ProcessPowerMessage(ctx context.Context, m api.PowerState) error
 }
 
 // ObjectType contains the API supported a specific type of object.

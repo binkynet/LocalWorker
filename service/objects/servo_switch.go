@@ -216,6 +216,10 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			}
 		} else {
 			// Requested position reached
+			targetDirection := model.SwitchDirection_STRAIGHT
+			if o.targetPL == o.servo.offPL {
+				targetDirection = model.SwitchDirection_OFF
+			}
 			currentDirection := model.SwitchDirection_STRAIGHT
 			if o.currentPL == o.servo.offPL {
 				currentDirection = model.SwitchDirection_OFF
@@ -235,8 +239,13 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
 			if sendNeeded {
 				msg := model.Switch{
-					Address:   o.address,
-					Direction: currentDirection,
+					Address: o.address,
+					Request: &model.SwitchState{
+						Direction: targetDirection,
+					},
+					Actual: &model.SwitchState{
+						Direction: currentDirection,
+					},
 				}
 				statuses.PublishSwitchActual(msg)
 			}
@@ -252,10 +261,11 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 
 // ProcessMessage acts upons a given request.
 func (o *servoSwitch) ProcessMessage(ctx context.Context, r model.Switch) error {
-	log := o.log.With().Str("direction", string(r.Direction)).Logger()
+	direction := r.GetRequest().GetDirection()
+	log := o.log.With().Str("direction", string(direction)).Logger()
 	log.Debug().Msg("got request")
 
-	switch r.Direction {
+	switch direction {
 	case model.SwitchDirection_STRAIGHT:
 		o.targetPL = o.servo.straightPL
 	case model.SwitchDirection_OFF:
@@ -267,8 +277,8 @@ func (o *servoSwitch) ProcessMessage(ctx context.Context, r model.Switch) error 
 }
 
 // ProcessPowerMessage acts upons a given power message.
-func (o *servoSwitch) ProcessPowerMessage(ctx context.Context, m model.Power) error {
-	if m.Enabled {
+func (o *servoSwitch) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
+	if m.GetEnabled() {
 		atomic.StoreInt32(&o.sendActualNeeded, 1)
 	}
 	return nil
