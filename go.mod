@@ -5,7 +5,7 @@ go 1.14
 replace github.com/coreos/go-systemd => github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a
 
 require (
-	github.com/binkynet/BinkyNet v0.0.0-20200628105057-ad70e4c93fb4
+	github.com/binkynet/BinkyNet v0.1.1-0.20200628111728-f9596a75610c
 	github.com/ecc1/gpio v0.0.0-20200212231225-d40e43fcf8f5
 	github.com/ewoutp/go-aggregate-error v0.0.0-20141209171456-e0dbde632d55
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0

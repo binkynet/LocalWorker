@@ -24,6 +24,7 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
 )
 
@@ -50,39 +51,45 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 	g, ctx := errgroup.WithContext(ctx)
 	// Receive output requests
 	g.Go(func() error {
-		server, err := lwControlClient.GetOutputRequests(ctx, &api.OutputRequestsOptions{
-			ManualConfirm: true,
-		})
-		if err != nil {
-			return err
-		}
-		msg, err := server.Recv()
-		if isStreamClosed(err) {
+		once := func() error {
+			server, err := lwControlClient.GetOutputRequests(ctx, &api.OutputRequestsOptions{
+				ManualConfirm: true,
+			})
+			if err != nil {
+				return err
+			}
+			msg, err := server.Recv()
+			if util.IsStreamClosed(err) {
+				return nil
+			} else if err != nil {
+				log.Warn().Err(err).Msg("Recv(Output) failed")
+			} else {
+				s.outputRequests.Pub(*msg)
+			}
 			return nil
-		} else if err != nil {
-			log.Warn().Err(err).Msg("Recv(Output) failed")
-		} else {
-			s.outputRequests.Pub(*msg)
 		}
-		return nil
+		return untilCanceled(ctx, log, "receiveOutputRequests", once)
 	})
 	// Receive switch requests
 	g.Go(func() error {
-		server, err := lwControlClient.GetSwitchRequests(ctx, &api.SwitchRequestsOptions{
-			ManualConfirm: true,
-		})
-		if err != nil {
-			return err
-		}
-		msg, err := server.Recv()
-		if isStreamClosed(err) {
+		once := func() error {
+			server, err := lwControlClient.GetSwitchRequests(ctx, &api.SwitchRequestsOptions{
+				ManualConfirm: true,
+			})
+			if err != nil {
+				return err
+			}
+			msg, err := server.Recv()
+			if util.IsStreamClosed(err) {
+				return nil
+			} else if err != nil {
+				log.Warn().Err(err).Msg("Recv(Switch) failed")
+			} else {
+				s.switchRequests.Pub(*msg)
+			}
 			return nil
-		} else if err != nil {
-			log.Warn().Err(err).Msg("Recv(Switch) failed")
-		} else {
-			s.switchRequests.Pub(*msg)
 		}
-		return nil
+		return untilCanceled(ctx, log, "receiveSwitchRequests", once)
 	})
 	return g.Wait()
 }

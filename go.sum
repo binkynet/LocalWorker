@@ -8,8 +8,8 @@ github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
-github.com/binkynet/BinkyNet v0.0.0-20200628105057-ad70e4c93fb4 h1:idLTW3uO44819bq1Lx5IasxaHG/FMWICXVtYK3B5Gf0=
-github.com/binkynet/BinkyNet v0.0.0-20200628105057-ad70e4c93fb4/go.mod h1:YL6p4+h4EFXteAtIyIL2j7lKS5DXmxRxz38wC8tKueY=
+github.com/binkynet/BinkyNet v0.1.1-0.20200628111728-f9596a75610c h1:4QALGwxdfEyQhAX2SvD+b3aXCR8SDh4Kup3JtADg1NY=
+github.com/binkynet/BinkyNet v0.1.1-0.20200628111728-f9596a75610c/go.mod h1:YL6p4+h4EFXteAtIyIL2j7lKS5DXmxRxz38wC8tKueY=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

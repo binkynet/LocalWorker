@@ -23,9 +23,9 @@ import (
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
 )
@@ -218,25 +218,33 @@ func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.Lo
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
 func (s *service) receivePowerMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
-	stream, err := lwControlClient.GetPowerRequests(ctx, &model.PowerRequestsOptions{})
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to request power messages")
-		return err
-	}
-	for {
-		msg, err := stream.Recv()
-		if isStreamClosed(err) {
-			return nil
+	log := s.log
+	once := func() error {
+		stream, err := lwControlClient.GetPowerRequests(ctx, &model.PowerRequestsOptions{})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to request power messages")
+			return err
 		}
-		// Process power request
-		log.Debug().Bool("enabled", msg.Enabled).Msg("Receiver power request")
-		for _, obj := range s.configuredObjects {
-			// Run the object itself
-			go func(obj Object) {
-				if err := obj.ProcessPowerMessage(ctx, *msg); err != nil {
-					log.Info().Err(err).Msg("Object failed to process PowerMessage")
-				}
-			}(obj)
+		defer stream.CloseSend()
+		for {
+			msg, err := stream.Recv()
+			if util.IsStreamClosed(err) {
+				return nil
+			} else if err != nil {
+				log.Warn().Err(err).Msg("Recv failed")
+				return err
+			}
+			// Process power request
+			log.Debug().Bool("enabled", msg.Enabled).Msg("Receiver power request")
+			for _, obj := range s.configuredObjects {
+				// Run the object itself
+				go func(obj Object) {
+					if err := obj.ProcessPowerMessage(ctx, *msg); err != nil {
+						log.Info().Err(err).Msg("Object failed to process PowerMessage")
+					}
+				}(obj)
+			}
 		}
 	}
+	return untilCanceled(ctx, log, "receivePowerMessages", once)
 }
