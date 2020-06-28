@@ -1,19 +1,31 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package devices
 
 import (
 	"context"
-	"fmt"
-	"path"
-	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mqtt"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/bridge"
-	"github.com/pkg/errors"
 )
 
 // Service contains the API that is exposed by the device service.
@@ -24,7 +36,7 @@ type Service interface {
 	// Configure is called once to put all devices in the desired state.
 	Configure(ctx context.Context) error
 	// Run the service until the given context is canceled.
-	Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error
+	Run(ctx context.Context) error
 	// Close brings all devices back to a safe state.
 	Close() error
 }
@@ -33,35 +45,35 @@ type service struct {
 	log               zerolog.Logger
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
-	bus               *bridge.I2CBus
+	bus               bridge.I2CBus
 }
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(configs map[model.DeviceID]model.Device, bus *bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
 		bus:               bus,
 	}
-	for id, c := range configs {
+	for _, c := range configs {
 		var dev Device
 		var err error
 		switch c.Type {
 		case model.DeviceTypeMCP23008:
-			dev, err = newMcp23008(c, bus)
+			dev, err = newMcp23008(*c, bus)
 		case model.DeviceTypeMCP23017:
-			dev, err = newMcp23017(c, bus)
+			dev, err = newMcp23017(*c, bus)
 		case model.DeviceTypePCA9685:
-			dev, err = newPCA9685(c, bus)
+			dev, err = newPCA9685(*c, bus)
 		default:
-			return nil, errors.Wrapf(model.ValidationError, "Unsupported device type '%s'", c.Type)
+			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}
 		if err != nil {
-			return nil, maskAny(err)
+			return nil, err
 		}
-		s.devices[id] = dev
+		s.devices[c.Id] = dev
 	}
 	return s, nil
 }
@@ -86,7 +98,7 @@ func (s *service) Configure(ctx context.Context) error {
 				Err(err).
 				Str("id", string(id)).
 				Msg("Failed to configure device")
-			ae.Add(maskAny(err))
+			ae.Add(err)
 		} else {
 			configuredDevices[id] = d
 		}
@@ -97,8 +109,8 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run the service until the given context is canceled.
-func (s *service) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix string) error {
-	msg := struct {
+func (s *service) Run(ctx context.Context) error {
+	/*msg := struct {
 		Slaves []string `json:"slave-addresses"`
 	}{}
 	topic := path.Join(topicPrefix, "bus")
@@ -119,7 +131,9 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix
 			// Context canceled
 			return nil
 		}
-	}
+	}*/
+	<-ctx.Done()
+	return nil
 }
 
 // Close brings all devices back to a safe state.
@@ -127,7 +141,7 @@ func (s *service) Close() error {
 	var ae aerr.AggregateError
 	for _, d := range s.devices {
 		if err := d.Close(); err != nil {
-			ae.Add(maskAny(err))
+			ae.Add(err)
 		}
 	}
 	return ae.AsError()

@@ -23,13 +23,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mqp"
-	"github.com/binkynet/BinkyNet/mqtt"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -40,7 +37,7 @@ type servoSwitch struct {
 	mutex   sync.Mutex
 	log     zerolog.Logger
 	config  model.Object
-	address mqp.ObjectAddress
+	address model.ObjectAddress
 	sender  string
 	servo   struct {
 		device        devices.PWM
@@ -64,10 +61,10 @@ type phaseRelay struct {
 
 func (r *phaseRelay) configure(ctx context.Context) error {
 	if err := r.device.SetDirection(ctx, r.pin, devices.PinDirectionOutput); err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := r.device.Set(ctx, r.pin, false); err != nil {
-		return maskAny(err)
+		return err
 	}
 	r.lastActive = false
 	return nil
@@ -76,7 +73,7 @@ func (r *phaseRelay) configure(ctx context.Context) error {
 func (r *phaseRelay) activateRelay(ctx context.Context) error {
 	if !r.lastActive {
 		if err := r.device.Set(ctx, r.pin, true); err != nil {
-			return maskAny(err)
+			return err
 		}
 		r.lastActive = true
 	}
@@ -86,7 +83,7 @@ func (r *phaseRelay) activateRelay(ctx context.Context) error {
 func (r *phaseRelay) deactivateRelay(ctx context.Context) error {
 	if r.lastActive {
 		if err := r.device.Set(ctx, r.pin, false); err != nil {
-			return maskAny(err)
+			return err
 		}
 		r.lastActive = false
 	}
@@ -94,17 +91,17 @@ func (r *phaseRelay) deactivateRelay(ctx context.Context) error {
 }
 
 // newServoSwitch creates a new servo-switch object for the given configuration.
-func newServoSwitch(sender string, oid model.ObjectID, address mqp.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
+func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddress, config model.Object, log zerolog.Logger, devService devices.Service) (Object, error) {
 	if config.Type != model.ObjectTypeServoSwitch {
-		return nil, errors.Wrapf(model.ValidationError, "Invalid object type '%s'", config.Type)
+		return nil, model.InvalidArgument("Invalid object type '%s'", config.Type)
 	}
 	servoConn, servoPin, err := getSinglePin(oid, config, model.ConnectionNameServo)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, err
 	}
 	servoDev, err := getPWMForPin(servoPin, devService)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%s: (connection %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
+		return nil, model.InvalidArgument("%s: (connection %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
 	}
 	straightPL := servoConn.GetIntConfig("straight", 150)
 	offPL := servoConn.GetIntConfig("off", 550)
@@ -124,10 +121,10 @@ func newServoSwitch(sender string, oid model.ObjectID, address mqp.ObjectAddress
 	sw.servo.stepSize = stepSize
 
 	// Phase relay for straight direction
-	if _, found := config.Connections[model.ConnectionNamePhaseStraightRelay]; found {
+	if _, found := config.ConnectionByName(model.ConnectionNamePhaseStraightRelay); found {
 		_, phaseStraightPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseStraightRelay)
 		if err != nil {
-			return nil, maskAny(err)
+			return nil, err
 		}
 		phaseStraightDev, err := getGPIOForPin(phaseStraightPin, devService)
 		if err != nil {
@@ -137,10 +134,10 @@ func newServoSwitch(sender string, oid model.ObjectID, address mqp.ObjectAddress
 	}
 
 	// Phase relay for off direction
-	if _, found := config.Connections[model.ConnectionNamePhaseOffRelay]; found {
+	if _, found := config.ConnectionByName(model.ConnectionNamePhaseOffRelay); found {
 		_, phaseOffPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseOffRelay)
 		if err != nil {
-			return nil, maskAny(err)
+			return nil, err
 		}
 		phaseOffDev, err := getGPIOForPin(phaseOffPin, devService)
 		if err != nil {
@@ -165,23 +162,23 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 
 	if r := o.servo.phaseStraight; r != nil {
 		if err := r.configure(ctx); err != nil {
-			return maskAny(err)
+			return err
 		}
 	}
 	if r := o.servo.phaseOff; r != nil {
 		if err := r.configure(ctx); err != nil {
-			return maskAny(err)
+			return err
 		}
 	}
 	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL); err != nil {
-		return maskAny(err)
+		return err
 	}
 	time.Sleep(time.Millisecond)
 	return nil
 }
 
 // Run the object until the given context is cancelled.
-func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPrefix, moduleID string) error {
+func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
 	defer o.log.Debug().Msg("servoSwitch.Run terminated")
 	for {
 		targetPL := o.targetPL
@@ -219,17 +216,21 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 			}
 		} else {
 			// Requested position reached
-			currentDirection := mqp.SwitchDirectionStraight
+			targetDirection := model.SwitchDirection_STRAIGHT
+			if o.targetPL == o.servo.offPL {
+				targetDirection = model.SwitchDirection_OFF
+			}
+			currentDirection := model.SwitchDirection_STRAIGHT
 			if o.currentPL == o.servo.offPL {
-				currentDirection = mqp.SwitchDirectionOff
+				currentDirection = model.SwitchDirection_OFF
 			}
 			// Set phase relays
-			if r := o.servo.phaseStraight; r != nil && currentDirection == mqp.SwitchDirectionStraight {
+			if r := o.servo.phaseStraight; r != nil && currentDirection == model.SwitchDirection_STRAIGHT {
 				if err := r.activateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
 				}
 			}
-			if r := o.servo.phaseOff; r != nil && currentDirection == mqp.SwitchDirectionOff {
+			if r := o.servo.phaseOff; r != nil && currentDirection == model.SwitchDirection_OFF {
 				if err := r.activateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
 				}
@@ -237,19 +238,16 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 			// Send actual message (if needed)
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
 			if sendNeeded {
-				msg := mqp.SwitchMessage{
-					ObjectMessageBase: mqp.NewObjectMessageBase(o.sender, mqp.MessageModeActual, o.address),
-					Direction:         currentDirection,
+				msg := model.Switch{
+					Address: o.address,
+					Request: &model.SwitchState{
+						Direction: targetDirection,
+					},
+					Actual: &model.SwitchState{
+						Direction: currentDirection,
+					},
 				}
-				topic := mqp.CreateObjectTopic(topicPrefix, moduleID, msg)
-				lctx, cancel := context.WithTimeout(ctx, time.Millisecond*250)
-				if err := mqttService.Publish(lctx, msg, topic, mqtt.QosDefault); err != nil {
-					o.log.Debug().Err(err).Msg("Publish failed")
-					atomic.StoreInt32(&o.sendActualNeeded, 1)
-				} else {
-					log.Debug().Str("topic", topic).Msg("change published")
-				}
-				cancel()
+				statuses.PublishSwitchActual(msg)
 			}
 		}
 		select {
@@ -262,14 +260,15 @@ func (o *servoSwitch) Run(ctx context.Context, mqttService mqtt.Service, topicPr
 }
 
 // ProcessMessage acts upons a given request.
-func (o *servoSwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) error {
-	log := o.log.With().Str("direction", string(r.Direction)).Logger()
+func (o *servoSwitch) ProcessMessage(ctx context.Context, r model.Switch) error {
+	direction := r.GetRequest().GetDirection()
+	log := o.log.With().Str("direction", string(direction)).Logger()
 	log.Debug().Msg("got request")
 
-	switch r.Direction {
-	case mqp.SwitchDirectionStraight:
+	switch direction {
+	case model.SwitchDirection_STRAIGHT:
 		o.targetPL = o.servo.straightPL
-	case mqp.SwitchDirectionOff:
+	case model.SwitchDirection_OFF:
 		o.targetPL = o.servo.offPL
 	}
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
@@ -278,8 +277,8 @@ func (o *servoSwitch) ProcessMessage(ctx context.Context, r mqp.SwitchMessage) e
 }
 
 // ProcessPowerMessage acts upons a given power message.
-func (o *servoSwitch) ProcessPowerMessage(ctx context.Context, m mqp.PowerMessage) error {
-	if m.Active && m.IsRequest() {
+func (o *servoSwitch) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
+	if m.GetEnabled() {
 		atomic.StoreInt32(&o.sendActualNeeded, 1)
 	}
 	return nil

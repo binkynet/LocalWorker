@@ -1,18 +1,33 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package server
 
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
-	"io/ioutil"
+	"log"
 	"net"
-	"net/http"
 	"strconv"
 
-	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
-	"github.com/julienschmidt/httprouter"
-	restkit "github.com/pulcy/rest-kit"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 type Server interface {
@@ -20,20 +35,14 @@ type Server interface {
 	Run(ctx context.Context) error
 }
 
-type API interface {
-	// Called to relay environment information.
-	Environment(ctx context.Context, input discoveryAPI.WorkerEnvironment) error
-	// Called to force a complete reload of the worker.
-	Reload(ctx context.Context) error
-	// Called to force a termination of the local worker.
-	Shutdown(ctx context.Context) error
-	// EnableMQTTLogger enables/disables logging to mqtt.
-	EnableMQTTLogger(enable bool)
+// Service ('s) that we offer
+type Service interface {
+	//api.LogProviderServiceServer
 }
 
 type Config struct {
-	Host string
-	Port int
+	Host     string
+	GRPCPort int
 }
 
 func (c Config) createTLSConfig() (*tls.Config, error) {
@@ -41,7 +50,7 @@ func (c Config) createTLSConfig() (*tls.Config, error) {
 }
 
 // NewServer creates a new server
-func NewServer(conf Config, api API, log zerolog.Logger) (Server, error) {
+func NewServer(conf Config, api Service, log zerolog.Logger) (Server, error) {
 	return &server{
 		Config:     conf,
 		log:        log.With().Str("component", "server").Logger(),
@@ -54,87 +63,43 @@ type server struct {
 	Config
 	log        zerolog.Logger
 	requestLog zerolog.Logger
-	api        API
+	api        Service
 }
 
 // Run the HTTP server until the given context is cancelled.
 func (s *server) Run(ctx context.Context) error {
-	mux := httprouter.New()
-	mux.NotFound = http.HandlerFunc(s.notFound)
-	mux.POST("/environment", s.handleEnvironment)
-	mux.DELETE("/environment", s.handleReload)
-	mux.POST("/shutdown", s.handleShutdown)
-	mux.POST("/logging/mqtt", s.handleEnableMQTTLogging)
-	mux.DELETE("/logging/mqtt", s.handleDisableMQTTLogging)
-
-	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	tlsConfig, err := s.Config.createTLSConfig()
+	// Create TLS config
+	/*tlsConfig, err := s.Config.createTLSConfig()
 	if err != nil {
-		return maskAny(err)
+		return err
+	}*/
+
+	// Prepare GRPC listener
+	grpcAddr := net.JoinHostPort(s.Host, strconv.Itoa(s.GRPCPort))
+	grpcLis, err := net.Listen("tcp", grpcAddr)
+	if err != nil {
+		log.Fatalf("failed to listen on address %s: %v", grpcAddr, err)
 	}
 
-	serverErrors := make(chan error)
+	// Prepare GRPC server
+	grpcSrv := grpc.NewServer(
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+	)
+	//api.RegisterLogProviderServiceServer(grpcSrv, s.api)
+	// Register reflection service on gRPC server.
+	reflection.Register(grpcSrv)
+
 	go func() {
-		defer close(serverErrors)
-		if tlsConfig != nil {
-			s.log.Info().Msgf("Listening on %s using TLS", addr)
-			httpServer.TLSConfig = tlsConfig
-			tlsConfig.BuildNameToCertificate()
-			if err := httpServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-				serverErrors <- maskAny(err)
-			}
-		} else {
-			s.log.Info().Msgf("Listening on %s", addr)
-			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				serverErrors <- maskAny(err)
-			}
+		if err := grpcSrv.Serve(grpcLis); err != nil {
+			log.Fatalf("failed to serve GRPC: %v", err)
 		}
 	}()
-
 	select {
-	case err := <-serverErrors:
-		return maskAny(err)
 	case <-ctx.Done():
 		// Close server
 		s.log.Debug().Msg("Closing server...")
-		httpServer.Close()
+		grpcSrv.GracefulStop()
 		return nil
 	}
-}
-
-func handleError(w http.ResponseWriter, err error) {
-	errResp := restkit.NewErrorResponseFromError(err)
-	sendJSON(w, errResp.HTTPStatusCode(), errResp)
-}
-
-func parseBody(r *http.Request, data interface{}) error {
-	defer r.Body.Close()
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return maskAny(err)
-	}
-	if err := json.Unmarshal(body, data); err != nil {
-		return maskAny(restkit.BadRequestError(err.Error(), 0))
-	}
-	return nil
-}
-
-// sendJSON encodes given body as JSON and sends it to the given writer with given HTTP status.
-func sendJSON(w http.ResponseWriter, status int, body interface{}) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if body == nil {
-		w.Write([]byte("{}"))
-	} else {
-		encoder := json.NewEncoder(w)
-		if err := encoder.Encode(body); err != nil {
-			return maskAny(err)
-		}
-	}
-	return nil
 }

@@ -1,58 +1,71 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package objects
 
 import (
 	"context"
-	"path"
 	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mqp"
-	"github.com/binkynet/BinkyNet/mqtt"
+	"github.com/binkynet/BinkyNet/apis/util"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/pkg/errors"
 )
 
 // Service contains the API that is exposed by the object service.
 type Service interface {
 	// ObjectByAddress returns the object with given address.
 	// Return false if not found
-	ObjectByAddress(address mqp.ObjectAddress) (Object, bool)
+	ObjectByAddress(address model.ObjectAddress) (Object, bool)
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
-	Run(ctx context.Context, mqttService mqtt.Service) error
+	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
 }
 
 type service struct {
 	startTime         time.Time
 	moduleID          string
-	objects           map[mqp.ObjectAddress]Object
-	configuredObjects map[mqp.ObjectAddress]Object
-	topicPrefix       string
+	objects           map[model.ObjectAddress]Object
+	configuredObjects map[model.ObjectAddress]Object
 	programVersion    string
 	log               zerolog.Logger
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, programVersion string, configs map[model.ObjectID]model.Object, topicPrefix string, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, programVersion string, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
-		objects:           make(map[mqp.ObjectAddress]Object),
-		configuredObjects: make(map[mqp.ObjectAddress]Object),
-		topicPrefix:       topicPrefix,
+		objects:           make(map[model.ObjectAddress]Object),
+		configuredObjects: make(map[model.ObjectAddress]Object),
 		programVersion:    programVersion,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
-	for id, c := range configs {
+	for _, c := range configs {
 		var obj Object
 		var err error
-		address := mqp.JoinModuleLocal(moduleID, string(id))
+		id := c.Id
+		address := model.JoinModuleLocal(moduleID, string(id))
 		log = log.With().
 			Str("address", string(address)).
 			Str("type", string(c.Type)).
@@ -60,15 +73,15 @@ func NewService(moduleID string, programVersion string, configs map[model.Object
 		log.Debug().Msg("creating object...")
 		switch c.Type {
 		case model.ObjectTypeBinarySensor:
-			obj, err = newBinarySensor(moduleID, id, address, c, log, devService)
+			obj, err = newBinarySensor(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeBinaryOutput:
-			obj, err = newBinaryOutput(moduleID, id, address, c, log, devService)
+			obj, err = newBinaryOutput(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeRelaySwitch:
-			obj, err = newRelaySwitch(moduleID, id, address, c, log, devService)
+			obj, err = newRelaySwitch(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeServoSwitch:
-			obj, err = newServoSwitch(moduleID, id, address, c, log, devService)
+			obj, err = newServoSwitch(moduleID, id, address, *c, log, devService)
 		default:
-			err = errors.Wrapf(model.ValidationError, "Unsupported object type '%s'", c.Type)
+			err = model.InvalidArgument("Unsupported object type '%s'", c.Type)
 		}
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to create object")
@@ -83,7 +96,7 @@ func NewService(moduleID string, programVersion string, configs map[model.Object
 
 // ObjectByAddress returns the object with given object address.
 // Return false if not found or not configured.
-func (s *service) ObjectByAddress(address mqp.ObjectAddress) (Object, bool) {
+func (s *service) ObjectByAddress(address model.ObjectAddress) (Object, bool) {
 	dev, ok := s.configuredObjects[address]
 	return dev, ok
 }
@@ -91,12 +104,12 @@ func (s *service) ObjectByAddress(address mqp.ObjectAddress) (Object, bool) {
 // Configure is called once to put all objects in the desired state.
 func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
-	configuredObjects := make(map[mqp.ObjectAddress]Object)
+	configuredObjects := make(map[model.ObjectAddress]Object)
 	for addr, d := range s.objects {
 		time.Sleep(time.Millisecond * 200)
 		if err := d.Configure(ctx); err != nil {
 			s.log.Error().Err(err).Str("address", string(addr)).Msg("Failed to configure object")
-			ae.Add(maskAny(err))
+			ae.Add(err)
 		} else {
 			s.log.Debug().Str("address", string(addr)).Msg("configured object")
 			configuredObjects[addr] = d
@@ -107,7 +120,7 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run all required topics until the given context is cancelled.
-func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
+func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
 	defer func() {
 		s.log.Debug().Msg("Run Objects ended")
 	}()
@@ -115,12 +128,19 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 		s.log.Warn().Msg("no configured objects, just waiting for context to be cancelled")
 		<-ctx.Done()
 	} else {
-		g, ctx := errgroup.WithContext(ctx)
-		// Keep sending ping messages
-		g.Go(func() error { s.sendPingMessages(ctx, mqttService); return nil })
+		// Create request/status services
+		requests := newRequestService(s.log)
+		statuses := newStatusService(s.log)
 
+		g, ctx := errgroup.WithContext(ctx)
+		// Run requests
+		g.Go(func() error { return requests.Run(ctx, lwControlClient) })
+		// Run statuses
+		g.Go(func() error { return statuses.Run(ctx, lwControlClient) })
+		// Keep sending ping messages
+		g.Go(func() error { s.sendPingMessages(ctx, lwControlClient); return nil })
 		// Receive power messages
-		g.Go(func() error { s.receivePowerMessages(ctx, mqttService); return nil })
+		g.Go(func() error { s.receivePowerMessages(ctx, lwControlClient); return nil })
 
 		// Run all objects & object types.
 		visitedTypes := make(map[*ObjectType]struct{})
@@ -130,53 +150,56 @@ func (s *service) Run(ctx context.Context, mqttService mqtt.Service) error {
 			obj := obj
 			g.Go(func() error {
 				s.log.Debug().Str("address", string(addr)).Msg("Running object")
-				if err := obj.Run(ctx, mqttService, s.topicPrefix, s.moduleID); err != nil {
-					return maskAny(err)
+				if err := obj.Run(ctx, requests, statuses, s.moduleID); err != nil {
+					return err
 				}
 				return nil
 			})
 
 			// Run the message loop for the type of object (if not running already)
-			objType := obj.Type()
-			if _, found := visitedTypes[objType]; found {
-				// Type already running
-				continue
-			}
-			visitedTypes[objType] = struct{}{}
-			g.Go(func() error {
-				s.log.Debug().Str("type", s.topicPrefix).Msg("starting object type")
-				if err := objType.Run(ctx, s.log, mqttService, s.topicPrefix, s.moduleID, s); err != nil {
-					return maskAny(err)
+			if objType := obj.Type(); objType != nil {
+				if _, found := visitedTypes[objType]; found {
+					// Type already running
+					continue
 				}
-				return nil
-			})
+				visitedTypes[objType] = struct{}{}
+				if objType.Run != nil {
+					g.Go(func() error {
+						s.log.Debug().Msg("starting object type")
+						if err := objType.Run(ctx, s.log, requests, statuses, s, s.moduleID); err != nil {
+							return err
+						}
+						return nil
+					})
+				}
+			}
 		}
 		if err := g.Wait(); err != nil {
 			s.log.Warn().Err(err).Msg("Run Objects failed")
-			return maskAny(err)
+			return err
 		}
 	}
 	return nil
 }
 
 // sendPingMessages keeps sending ping messages until the given context is canceled.
-func (s *service) sendPingMessages(ctx context.Context, mqttService mqtt.Service) {
-	topic := mqp.CreateGlobalTopic(s.topicPrefix, mqp.PingMessage{})
-	log := s.log.With().Str("topic", topic).Logger()
-	log.Info().Str("topic", topic).Msg("Sending ping messages")
+func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) {
+	log := s.log
+	log.Info().Msg("Sending ping messages")
 	defer func() {
-		log.Info().Str("topic", topic).Msg("Stopped sending ping messages")
+		log.Info().Msg("Stopped sending ping messages")
 	}()
+	msg := &model.LocalWorkerInfo{
+		Id:          s.moduleID,
+		Description: "Local worker",
+		Version:     s.programVersion,
+		Uptime:      int64(time.Since(s.startTime).Seconds()),
+	}
 	for {
 		// Send ping
-		msg := mqp.PingMessage{
-			GlobalMessageBase: mqp.NewGlobalMessageBase(s.moduleID, mqp.MessageModeActual),
-			ProtocolVersion:   mqp.ProtocolVersion,
-			Version:           s.programVersion,
-			Uptime:            int(time.Since(s.startTime).Seconds()),
-		}
+		msg.Uptime = int64(time.Since(s.startTime).Seconds())
 		delay := time.Second * 15
-		if err := mqttService.Publish(ctx, msg, topic, mqtt.QosDefault); err != nil {
+		if _, err := lwControlClient.Ping(ctx, msg); err != nil {
 			log.Info().Err(err).Msg("Failed to send ping message")
 			delay = time.Second * 5
 		}
@@ -194,39 +217,34 @@ func (s *service) sendPingMessages(ctx context.Context, mqttService mqtt.Service
 
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
-func (s *service) receivePowerMessages(ctx context.Context, mqttService mqtt.Service) error {
-	topic := path.Join(s.topicPrefix, "global/power")
-	log := s.log.With().
-		Str("topic", topic).
-		Logger()
-	subscription, err := mqttService.Subscribe(ctx, topic, mqtt.QosDefault)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to subscribe to MQTT topic")
-		return maskAny(err)
-	}
-	log.Debug().Msg("subscribed to MQTT topic")
-	defer subscription.Close()
-
-	for {
-		// Wait for next message and process it
-		var msg mqp.PowerMessage
-		msgID, err := subscription.NextMsg(ctx, &msg)
+func (s *service) receivePowerMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+	log := s.log
+	once := func() error {
+		stream, err := lwControlClient.GetPowerRequests(ctx, &model.PowerRequestsOptions{})
 		if err != nil {
-			if errors.Cause(err) == context.Canceled {
+			log.Error().Err(err).Msg("Failed to request power messages")
+			return err
+		}
+		defer stream.CloseSend()
+		for {
+			msg, err := stream.Recv()
+			if util.IsStreamClosed(err) || ctx.Err() != nil {
 				return nil
+			} else if err != nil {
+				log.Warn().Err(err).Msg("Recv failed")
+				return err
 			}
-			log.Debug().Err(err).Msg("NextMsg failed")
-		} else if msg.IsRequest() {
 			// Process power request
-			log.Debug().Int("msg-id", msgID).Bool("active", msg.Active).Msg("Receiver power request")
+			log.Debug().Bool("enabled", msg.Enabled).Msg("Receiver power request")
 			for _, obj := range s.configuredObjects {
 				// Run the object itself
 				go func(obj Object) {
-					if err := obj.ProcessPowerMessage(ctx, msg); err != nil {
+					if err := obj.ProcessPowerMessage(ctx, *msg); err != nil {
 						log.Info().Err(err).Msg("Object failed to process PowerMessage")
 					}
 				}(obj)
 			}
 		}
 	}
+	return untilCanceled(ctx, log, "receivePowerMessages", once)
 }

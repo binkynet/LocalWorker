@@ -1,3 +1,20 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package devices
 
 import (
@@ -5,13 +22,13 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/binkynet/BinkyNet/model"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/bridge"
 )
 
 type mcp23008 struct {
 	config  model.Device
-	bus     *bridge.I2CBus
+	bus     bridge.I2CBus
 	address byte
 	iodir   byte
 	value   byte
@@ -33,13 +50,13 @@ const (
 )
 
 // newMcp23008 creates a GPIO instance for a mcp23008 device with given config.
-func newMcp23008(config model.Device, bus *bridge.I2CBus) (GPIO, error) {
+func newMcp23008(config model.Device, bus bridge.I2CBus) (GPIO, error) {
 	if config.Type != model.DeviceTypeMCP23008 {
-		return nil, errors.Wrapf(model.ValidationError, "Invalid device type '%s'", string(config.Type))
+		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
 	address, err := parseAddress(config.Address)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, err
 	}
 	return &mcp23008{
 		config:  config,
@@ -54,10 +71,10 @@ func newMcp23008(config model.Device, bus *bridge.I2CBus) (GPIO, error) {
 func (d *mcp23008) Configure(ctx context.Context) error {
 	d.iodir = 0xff
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIOCON, 0x20); err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIODIR, d.iodir); err != nil {
-		return maskAny(err)
+		return err
 	}
 	return nil
 }
@@ -67,7 +84,7 @@ func (d *mcp23008) Close() error {
 	// Restore all to input
 	d.iodir = 0xff
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIODIR, d.iodir); err != nil {
-		return maskAny(err)
+		return err
 	}
 	return nil
 }
@@ -81,7 +98,7 @@ func (d *mcp23008) PinCount() uint {
 func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, direction PinDirection) error {
 	mask, err := d.bitMask(pin)
 	if err != nil {
-		return maskAny(err)
+		return err
 	}
 	if direction == PinDirectionInput {
 		d.iodir |= mask
@@ -89,7 +106,7 @@ func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 		d.iodir &= ^mask
 	}
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIODIR, d.iodir); err != nil {
-		return maskAny(err)
+		return err
 	}
 	return nil
 }
@@ -98,11 +115,11 @@ func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 func (d *mcp23008) GetDirection(ctx context.Context, pin model.DeviceIndex) (PinDirection, error) {
 	mask, err := d.bitMask(pin)
 	if err != nil {
-		return PinDirectionInput, maskAny(err)
+		return PinDirectionInput, err
 	}
 	value, err := d.bus.ReadByteReg(d.address, mcp23008RegIODIR)
 	if err != nil {
-		return PinDirectionInput, maskAny(err)
+		return PinDirectionInput, err
 	}
 	if value&mask == 0 {
 		return PinDirectionOutput, nil
@@ -114,7 +131,7 @@ func (d *mcp23008) GetDirection(ctx context.Context, pin model.DeviceIndex) (Pin
 func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) error {
 	mask, err := d.bitMask(pin)
 	if err != nil {
-		return maskAny(err)
+		return err
 	}
 	if d.iodir&mask == 0 {
 		// IODIR == output
@@ -124,7 +141,7 @@ func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 			d.value &= ^mask
 		}
 		if err := d.bus.WriteByteReg(d.address, mcp23008RegGPIO, d.value); err != nil {
-			return maskAny(err)
+			return err
 		}
 		return nil
 	}
@@ -135,11 +152,11 @@ func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 func (d *mcp23008) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
 	mask, err := d.bitMask(pin)
 	if err != nil {
-		return false, maskAny(err)
+		return false, err
 	}
 	value, err := d.bus.ReadByteReg(d.address, mcp23008RegGPIO)
 	if err != nil {
-		return false, maskAny(err)
+		return false, err
 	}
 	return mask&value != 0, nil
 }

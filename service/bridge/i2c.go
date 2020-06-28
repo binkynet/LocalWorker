@@ -1,3 +1,20 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package bridge
 
 import (
@@ -46,7 +63,15 @@ type i2cSmbusIoctlData struct {
 	data      uintptr
 }
 
-type I2CBus struct {
+type I2CBus interface {
+	Close() (err error)
+	ReadByteReg(addr byte, reg uint8) (uint8, error)
+	WriteByteReg(addr byte, reg uint8, val uint8) (err error)
+	// DetectSlaveAddresses probes the bus to detect available addresses.
+	DetectSlaveAddresses() []byte
+}
+
+type i2cBus struct {
 	mutex sync.Mutex
 	file  *os.File
 	funcs uint64 // adapter functionality mask
@@ -54,20 +79,21 @@ type I2CBus struct {
 
 // NewI2cDevice returns an io.ReadWriteCloser with the proper ioctrl given
 // an i2c bus location.
-func NewI2cDevice(location string) (d *I2CBus, err error) {
-	d = &I2CBus{}
+func NewI2cDevice(location string) (I2CBus, error) {
+	d := &i2cBus{}
 
+	var err error
 	if d.file, err = os.OpenFile(location, os.O_RDWR, os.ModeExclusive); err != nil {
-		return
+		return nil, err
 	}
-	if err = d.queryFunctionality(); err != nil {
-		return
+	if err := d.queryFunctionality(); err != nil {
+		return nil, err
 	}
 
-	return
+	return d, nil
 }
 
-func (d *I2CBus) queryFunctionality() (err error) {
+func (d *i2cBus) queryFunctionality() (err error) {
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
 		d.file.Fd(),
@@ -81,7 +107,7 @@ func (d *I2CBus) queryFunctionality() (err error) {
 	return
 }
 
-func (d *I2CBus) setAddress(address int) (err error) {
+func (d *i2cBus) setAddress(address int) (err error) {
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
 		d.file.Fd(),
@@ -96,14 +122,14 @@ func (d *I2CBus) setAddress(address int) (err error) {
 	return
 }
 
-func (d *I2CBus) Close() (err error) {
+func (d *i2cBus) Close() (err error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
 	return d.file.Close()
 }
 
-func (d *I2CBus) ReadByteReg(addr byte, reg uint8) (uint8, error) {
+func (d *i2cBus) ReadByteReg(addr byte, reg uint8) (uint8, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -117,7 +143,7 @@ func (d *I2CBus) ReadByteReg(addr byte, reg uint8) (uint8, error) {
 	return val, nil
 }
 
-func (d *I2CBus) WriteByteReg(addr byte, reg uint8, val uint8) (err error) {
+func (d *i2cBus) WriteByteReg(addr byte, reg uint8, val uint8) (err error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -130,7 +156,7 @@ func (d *I2CBus) WriteByteReg(addr byte, reg uint8, val uint8) (err error) {
 	return nil
 }
 
-func (d *I2CBus) readByte() (val byte, err error) {
+func (d *i2cBus) readByte() (val byte, err error) {
 	if d.funcs&I2C_FUNC_SMBUS_READ_BYTE == 0 {
 		return 0, fmt.Errorf("SMBus read byte not supported")
 	}
@@ -140,7 +166,7 @@ func (d *I2CBus) readByte() (val byte, err error) {
 	return data, err
 }
 
-func (d *I2CBus) readByteData(reg uint8) (val uint8, err error) {
+func (d *i2cBus) readByteData(reg uint8) (val uint8, err error) {
 	if d.funcs&I2C_FUNC_SMBUS_READ_BYTE_DATA == 0 {
 		return 0, fmt.Errorf("SMBus read byte data not supported")
 	}
@@ -150,7 +176,7 @@ func (d *I2CBus) readByteData(reg uint8) (val uint8, err error) {
 	return data, err
 }
 
-func (d *I2CBus) readWordData(reg uint8) (val uint16, err error) {
+func (d *i2cBus) readWordData(reg uint8) (val uint16, err error) {
 	if d.funcs&I2C_FUNC_SMBUS_READ_WORD_DATA == 0 {
 		return 0, fmt.Errorf("SMBus read word data not supported")
 	}
@@ -160,7 +186,7 @@ func (d *I2CBus) readWordData(reg uint8) (val uint16, err error) {
 	return data, err
 }
 
-func (d *I2CBus) writeByte(val byte) (err error) {
+func (d *i2cBus) writeByte(val byte) (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_WRITE_BYTE == 0 {
 		return fmt.Errorf("SMBus write byte not supported")
 	}
@@ -169,7 +195,7 @@ func (d *I2CBus) writeByte(val byte) (err error) {
 	return err
 }
 
-func (d *I2CBus) writeByteData(reg uint8, val uint8) (err error) {
+func (d *i2cBus) writeByteData(reg uint8, val uint8) (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_WRITE_BYTE_DATA == 0 {
 		return fmt.Errorf("SMBus write byte data not supported")
 	}
@@ -179,7 +205,7 @@ func (d *I2CBus) writeByteData(reg uint8, val uint8) (err error) {
 	return err
 }
 
-func (d *I2CBus) writeWordData(reg uint8, val uint16) (err error) {
+func (d *i2cBus) writeWordData(reg uint8, val uint16) (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_WRITE_WORD_DATA == 0 {
 		return fmt.Errorf("SMBus write word data not supported")
 	}
@@ -189,7 +215,7 @@ func (d *I2CBus) writeWordData(reg uint8, val uint16) (err error) {
 	return err
 }
 
-func (d *I2CBus) writeBlockData(reg uint8, data []byte) (err error) {
+func (d *i2cBus) writeBlockData(reg uint8, data []byte) (err error) {
 	if len(data) > 32 {
 		return fmt.Errorf("Writing blocks larger than 32 bytes (%v) not supported", len(data))
 	}
@@ -212,16 +238,16 @@ func (d *I2CBus) writeBlockData(reg uint8, data []byte) (err error) {
 }
 
 // Read implements the io.ReadWriteCloser method by direct I2C read operations.
-func (d *I2CBus) read(b []byte) (n int, err error) {
+func (d *i2cBus) read(b []byte) (n int, err error) {
 	return d.file.Read(b)
 }
 
 // Write implements the io.ReadWriteCloser method by direct I2C write operations.
-func (d *I2CBus) write(b []byte) (n int, err error) {
+func (d *i2cBus) write(b []byte) (n int, err error) {
 	return d.file.Write(b)
 }
 
-func (d *I2CBus) smbusAccess(readWrite byte, command byte, size uint32, data uintptr) error {
+func (d *i2cBus) smbusAccess(readWrite byte, command byte, size uint32, data uintptr) error {
 	smbus := &i2cSmbusIoctlData{
 		readWrite: readWrite,
 		command:   command,
@@ -244,7 +270,7 @@ func (d *I2CBus) smbusAccess(readWrite byte, command byte, size uint32, data uin
 }
 
 // DetectSlaveAddresses probes the bus to detect available addresses.
-func (d *I2CBus) DetectSlaveAddresses() []byte {
+func (d *i2cBus) DetectSlaveAddresses() []byte {
 	var result []byte
 	for addr := 1; addr < 256; addr++ {
 		if _, err := d.ReadByteReg(byte(addr), 0); err == nil {

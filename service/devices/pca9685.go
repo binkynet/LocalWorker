@@ -1,19 +1,33 @@
+// Copyright 2020 Ewout Prangsma
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Author Ewout Prangsma
+//
+
 package devices
 
 import (
 	"context"
-	"fmt"
 	"math"
 
-	"github.com/pkg/errors"
-
-	"github.com/binkynet/BinkyNet/model"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/bridge"
 )
 
 type pca9685 struct {
 	config  model.Device
-	bus     *bridge.I2CBus
+	bus     bridge.I2CBus
 	address byte
 }
 
@@ -30,13 +44,13 @@ const (
 )
 
 // newPCA9685 creates a PWM instance for a pca9685 device with given config.
-func newPCA9685(config model.Device, bus *bridge.I2CBus) (PWM, error) {
+func newPCA9685(config model.Device, bus bridge.I2CBus) (PWM, error) {
 	if config.Type != model.DeviceTypePCA9685 {
-		return nil, errors.Wrapf(model.ValidationError, "Invalid device type '%s'", string(config.Type))
+		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
 	address, err := parseAddress(config.Address)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, err
 	}
 	return &pca9685{
 		config:  config,
@@ -58,15 +72,15 @@ func (d *pca9685) Configure(ctx context.Context) error {
 	// Set MODE1: SLEEP=1, ALLCALL=1
 	mode1 := uint8(0x11)
 	if err := d.bus.WriteByteReg(d.address, pca9685MODE1Reg, mode1); err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := d.bus.WriteByteReg(d.address, pca9685PRESCALEReg, prescale); err != nil {
-		return maskAny(err)
+		return err
 	}
 	// Set MODE1: SLEEP=0, ALLCALL=1
 	mode1 = uint8(0x01)
 	if err := d.bus.WriteByteReg(d.address, pca9685MODE1Reg, mode1); err != nil {
-		return maskAny(err)
+		return err
 	}
 	return nil
 }
@@ -76,7 +90,7 @@ func (d *pca9685) Close() error {
 	// Set MODE1: SLEEP=1, ALLCALL=1
 	mode1 := uint8(0x11)
 	if err := d.bus.WriteByteReg(d.address, pca9685MODE1Reg, mode1); err != nil {
-		return maskAny(err)
+		return err
 	}
 	return nil
 }
@@ -95,19 +109,19 @@ func (d *pca9685) MaxValue() int {
 func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, offValue int) error {
 	regBase, err := d.regBase(output)
 	if err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := d.bus.WriteByteReg(d.address, uint8(regBase+pca9685OnLowRegOfs), uint8(onValue&0xFF)); err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := d.bus.WriteByteReg(d.address, uint8(regBase+pca9685OnHighRegOfs), uint8((onValue>>8)&0xFF)); err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := d.bus.WriteByteReg(d.address, uint8(regBase+pca9685OffLowRegOfs), uint8(offValue&0xFF)); err != nil {
-		return maskAny(err)
+		return err
 	}
 	if err := d.bus.WriteByteReg(d.address, uint8(regBase+pca9685OffHighRegOfs), uint8((offValue>>8)&0xFF)); err != nil {
-		return maskAny(err)
+		return err
 	}
 	return nil
 }
@@ -116,23 +130,23 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (int, int, error) {
 	regBase, err := d.regBase(output)
 	if err != nil {
-		return 0, 0, maskAny(err)
+		return 0, 0, err
 	}
 	onLow, err := d.bus.ReadByteReg(d.address, uint8(regBase+pca9685OnLowRegOfs))
 	if err != nil {
-		return 0, 0, maskAny(err)
+		return 0, 0, err
 	}
 	onHigh, err := d.bus.ReadByteReg(d.address, uint8(regBase+pca9685OnHighRegOfs))
 	if err != nil {
-		return 0, 0, maskAny(err)
+		return 0, 0, err
 	}
 	offLow, err := d.bus.ReadByteReg(d.address, uint8(regBase+pca9685OffLowRegOfs))
 	if err != nil {
-		return 0, 0, maskAny(err)
+		return 0, 0, err
 	}
 	offHigh, err := d.bus.ReadByteReg(d.address, uint8(regBase+pca9685OffHighRegOfs))
 	if err != nil {
-		return 0, 0, maskAny(err)
+		return 0, 0, err
 	}
 	on := int(onLow) | (int(onHigh) << 8)
 	off := int(offLow) | (int(offHigh) << 8)
@@ -142,7 +156,7 @@ func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (int, int, 
 // regBase returns the first register for the given output.
 func (d *pca9685) regBase(output model.DeviceIndex) (int, error) {
 	if output < 1 || output > 16 {
-		return 0, maskAny(fmt.Errorf("Output must be in 1..16 range, got %d", output))
+		return 0, model.InvalidArgument("Output must be in 1..16 range, got %d", output)
 	}
 	return pca9685LEDBaseReg + ((int(output) - 1) * pca9685RegIncrement), nil
 }

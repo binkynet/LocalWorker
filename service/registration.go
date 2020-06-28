@@ -15,101 +15,14 @@
 package service
 
 import (
-	"context"
 	"crypto/sha1"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
-	"time"
-
-	discoveryAPI "github.com/binkynet/BinkyNet/discovery"
 )
-
-// Run the worker until the given context is cancelled.
-func (s *service) registerWorker(ctx context.Context, hostID string, discoveryPort, httpPort int, httpSecure bool) error {
-	intfs, err := net.Interfaces()
-	if err != nil {
-		s.Log.Error().Err(err).Msg("Failed to get network interfaces")
-		return maskAny(err)
-	}
-	wg := sync.WaitGroup{}
-	errors := make(chan error, len(intfs))
-	for _, intf := range intfs {
-		flagMask := net.FlagUp | net.FlagBroadcast | net.FlagLoopback
-		flagValue := net.FlagUp | net.FlagBroadcast
-		if intf.Flags&flagMask == flagValue {
-			addrs, err := intf.Addrs()
-			if err != nil {
-				s.Log.Error().Err(err).Str("interface", intf.Name).Msg("Failed to get interfaces addresses")
-				continue
-			}
-			if localAddr := firstIPv4(addrs); localAddr != nil {
-				s.Log.Info().
-					Str("interface", intf.Name).
-					Str("address", localAddr.String()).
-					Msg("Performing registration on interface")
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					if err := s.registerWorkerOnLocalAddr(ctx, hostID, localAddr, discoveryPort, httpPort, httpSecure); err != nil {
-						errors <- err
-					}
-				}()
-			}
-		}
-	}
-	wg.Wait()
-	select {
-	case err := <-errors:
-		return maskAny(err)
-	default:
-		return nil
-	}
-}
-
-// Run the worker until the given context is cancelled.
-func (s *service) registerWorkerOnLocalAddr(ctx context.Context, hostID string, localAddr net.IP, discoveryPort, httpPort int, httpSecure bool) error {
-	broadcastIP := net.IPv4(255, 255, 255, 255)
-	localUDPAddr := &net.UDPAddr{
-		IP: localAddr,
-	}
-	socket, err := net.DialUDP("udp4", localUDPAddr, &net.UDPAddr{
-		IP:   broadcastIP,
-		Port: discoveryPort,
-	})
-	if err != nil {
-		s.Log.Debug().Err(err).Msg("Failed to dial discovery endpoint")
-		return maskAny(err)
-	}
-	defer socket.Close()
-
-	msg := discoveryAPI.RegisterWorkerMessage{
-		ID:     hostID,
-		Port:   httpPort,
-		Secure: httpSecure,
-	}
-	encodedMsg, err := json.Marshal(msg)
-	if err != nil {
-		return maskAny(err)
-	}
-	for {
-		if _, err := socket.Write(encodedMsg); err != nil {
-			s.Log.Error().Err(err).Msg("Failed to send register worker message")
-		}
-		select {
-		case <-time.After(time.Second):
-			// Retry
-		case <-ctx.Done():
-			// Context cancelled
-			return nil
-		}
-	}
-}
 
 // create a host ID based on network hardware addresses.
 func createHostID() (string, error) {
@@ -121,7 +34,7 @@ func createHostID() (string, error) {
 
 	ifs, err := net.Interfaces()
 	if err != nil {
-		return "", maskAny(err)
+		return "", err
 	}
 	list := make([]string, 0, len(ifs))
 	for _, v := range ifs {

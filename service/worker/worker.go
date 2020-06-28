@@ -2,12 +2,10 @@ package worker
 
 import (
 	"context"
-	"path"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/model"
-	"github.com/binkynet/BinkyNet/mqtt"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/rs/zerolog"
 
 	"github.com/binkynet/LocalWorker/service/bridge"
@@ -18,20 +16,18 @@ import (
 // Service contains the API exposed by the worker service
 type Service interface {
 	// Run the worker service until the given context is cancelled.
-	Run(ctx context.Context) error
+	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
 }
 
 type Config struct {
 	model.LocalWorkerConfig
-	TopicPrefix    string
 	ProgramVersion string
 	ModuleID       string
 }
 
 type Dependencies struct {
-	Log         zerolog.Logger
-	Bridge      bridge.API
-	MQTTService mqtt.Service
+	Log    zerolog.Logger
+	Bridge bridge.API
 }
 
 // NewService instantiates a new Service.
@@ -50,7 +46,7 @@ type service struct {
 }
 
 // Run the worker service until the given context is cancelled.
-func (s *service) Run(ctx context.Context) error {
+func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
 	// Open I2C bus
 	s.Log.Debug().Msg("open I2C bus")
 	bus, err := s.Bridge.I2CBus()
@@ -59,7 +55,7 @@ func (s *service) Run(ctx context.Context) error {
 	}
 	// Build devices service
 	s.Log.Debug().Msg("build devices service")
-	devService, err := devices.NewService(s.config.Devices, bus, s.Log)
+	devService, err := devices.NewService(s.config.GetDevices(), bus, s.Log)
 	if err != nil {
 		return maskAny(err)
 	}
@@ -79,7 +75,7 @@ func (s *service) Run(ctx context.Context) error {
 
 	// Build objects service
 	s.Log.Debug().Msg("build objects service")
-	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, s.config.TopicPrefix, devService, s.Log.With().Str("component", "worker.objects").Logger())
+	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, devService, s.Log.With().Str("component", "worker.objects").Logger())
 	if err != nil {
 		return maskAny(err)
 	}
@@ -96,7 +92,7 @@ func (s *service) Run(ctx context.Context) error {
 	g, lctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		s.Log.Debug().Msg("run devices")
-		if err := devService.Run(lctx, s.MQTTService, path.Join(s.config.TopicPrefix, s.config.ModuleID)); err != nil {
+		if err := devService.Run(lctx); err != nil {
 			s.Log.Error().Err(err).Msg("Run failed")
 			return maskAny(err)
 		}
@@ -104,7 +100,7 @@ func (s *service) Run(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		s.Log.Debug().Msg("run objects")
-		if err := objService.Run(lctx, s.MQTTService); err != nil {
+		if err := objService.Run(lctx, lwControlClient); err != nil {
 			s.Log.Error().Err(err).Msg("Run failed")
 			return maskAny(err)
 		}
