@@ -59,7 +59,7 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 				return err
 			}
 			msg, err := server.Recv()
-			if util.IsStreamClosed(err) {
+			if util.IsStreamClosed(err) || ctx.Err() != nil {
 				return nil
 			} else if err != nil {
 				log.Warn().Err(err).Msg("Recv(Output) failed")
@@ -80,7 +80,7 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 				return err
 			}
 			msg, err := server.Recv()
-			if util.IsStreamClosed(err) {
+			if util.IsStreamClosed(err) || ctx.Err() != nil {
 				return nil
 			} else if err != nil {
 				log.Warn().Err(err).Msg("Recv(Switch) failed")

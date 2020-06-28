@@ -228,7 +228,7 @@ func (s *service) receivePowerMessages(ctx context.Context, lwControlClient mode
 		defer stream.CloseSend()
 		for {
 			msg, err := stream.Recv()
-			if util.IsStreamClosed(err) {
+			if util.IsStreamClosed(err) || ctx.Err() != nil {
 				return nil
 			} else if err != nil {
 				log.Warn().Err(err).Msg("Recv failed")
