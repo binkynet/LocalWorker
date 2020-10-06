@@ -262,10 +262,15 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 		lctx, cancel := context.WithCancel(ctx)
 		for {
 			select {
-			case conf = <-configChanged:
+			case c := <-configChanged:
 				// Start/restart worker
-				log.Debug().Msg("Configuration changed")
-				cancel()
+				if c != nil {
+					conf = c
+					log.Debug().Msg("Configuration changed")
+					cancel()
+				} else {
+					log.Warn().Msg("Received nil configuration")
+				}
 			case <-ctx.Done():
 				// Context canceled
 				cancel()
