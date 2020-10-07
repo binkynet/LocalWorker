@@ -221,9 +221,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 	defer close(configChanged)
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Request configuration in stream
-	g.Go(func() error {
-		log := log.With().Str("component", "config-reader").Logger()
+	loadConfigStream := func(log zerolog.Logger) error {
 		confStream, err := lwConfigClient.GetConfig(ctx, &api.LocalWorkerInfo{
 			Id:          s.hostID,
 			Description: "Local worker",
@@ -231,7 +229,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 			Uptime:      0, // TODO
 		})
 		if err != nil {
-			log.Debug().Err(err).Msg("GetConfig failed")
+			log.Debug().Err(err).Msg("GetConfig failed.")
 			return err
 		}
 		defer confStream.CloseSend()
@@ -251,6 +249,23 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 			case <-ctx.Done():
 				// Context canceled
 				return nil
+			}
+		}
+	}
+
+	// Request configuration in stream
+	g.Go(func() error {
+		log := log.With().Str("component", "config-reader").Logger()
+		for {
+			if err := loadConfigStream(log); err != nil {
+				log.Warn().Err(err).Msg("loadConfigStream failed")
+			}
+			select {
+			case <-ctx.Done():
+				// Context canceled
+				return nil
+			case <-time.After(time.Second * 2):
+				// Retry
 			}
 		}
 	})
