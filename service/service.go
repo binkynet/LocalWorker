@@ -270,6 +270,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 					cancel()
 				} else {
 					log.Warn().Msg("Received nil configuration")
+					continue
 				}
 			case <-ctx.Done():
 				// Context canceled
@@ -286,7 +287,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 				moduleID = alias
 			}
 			log = log.With().Str("module-id", moduleID).Logger()
-			go func(ctx context.Context) {
+			go func(ctx context.Context, conf *api.LocalWorkerConfig) {
 				for {
 					w, err := worker.NewService(worker.Config{
 						LocalWorkerConfig: *conf,
@@ -315,7 +316,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 						// Retry
 					}
 				}
-			}(lctx)
+			}(lctx, conf)
 		}
 	})
 
