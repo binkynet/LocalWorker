@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -88,12 +89,11 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 // to register the worker, followed by running the worker loop
 // in a given environment.
 func (s *service) Run(ctx context.Context) error {
+	log := s.Log.With().Str("id", s.hostID).Logger()
 	defer s.Bridge.Close()
 
 	// Create host ID
-	s.Log.Info().
-		Str("id", s.hostID).
-		Msg("Found host ID")
+	log.Info().Msg("Found host ID")
 
 	// Fetch local slave configuration
 	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
@@ -115,11 +115,11 @@ func (s *service) Run(ctx context.Context) error {
 		case info := <-s.lwConfigChanges:
 			// LocalWorkerConfigService discovery change detected
 			lwConfigInfo = &info
-			s.Log.Debug().Msg("LocalWorkerConfig discovery change received")
+			log.Debug().Msg("LocalWorkerConfig discovery change received")
 		case info := <-s.lwControlChanges:
 			// LocalWorkerControlService discovery change detected
 			lwControlInfo = &info
-			s.Log.Debug().Msg("LocalWorkerControl discovery change received")
+			log.Debug().Msg("LocalWorkerControl discovery change received")
 		case <-ctx.Done():
 			// Context canceled
 			return nil
@@ -133,11 +133,11 @@ func (s *service) Run(ctx context.Context) error {
 			continue
 		}
 
-		if err := func() error {
+		if err := func(lwConfigInfo *api.ServiceInfo, lwControlInfo *api.ServiceInfo) error {
 			// Dialog connection to lwConfig
 			lwConfigConn, err := dialConn(lwConfigInfo)
 			if err != nil {
-				s.Log.Warn().Err(err).Msg("Failed to dial LocalWorkerConfig service")
+				log.Warn().Err(err).Msg("Failed to dial LocalWorkerConfig service")
 				return nil
 			}
 			defer lwConfigConn.Close()
@@ -145,7 +145,7 @@ func (s *service) Run(ctx context.Context) error {
 			// Dialog connection to lwControl
 			lwControlConn, err := dialConn(lwControlInfo)
 			if err != nil {
-				s.Log.Warn().Err(err).Msg("Failed to dial LocalWorkerControl service")
+				log.Warn().Err(err).Msg("Failed to dial LocalWorkerControl service")
 				return nil
 			}
 			defer lwControlConn.Close()
@@ -159,12 +159,12 @@ func (s *service) Run(ctx context.Context) error {
 			err = s.runWorkerInEnvironment(workerCtx, lwConfigClient, lwControlClient)
 			workerCancel()
 			if err != nil {
-				s.Log.Error().Err(err).Msg("registerWorker failed")
+				log.Debug().Err(err).Msg("runWorkerInEnvironment failed")
 				return err
 			}
 			return nil
-		}(); err != nil {
-			return err
+		}(lwConfigInfo, lwControlInfo); err != nil {
+			log.Warn().Err(err).Msg("Worker loop failed. Retrying...")
 		}
 
 		// If context cancelled, return
@@ -211,7 +211,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 		s.Bridge.SetRedLED(true)
 		if s.shutdown {
 			if err := environment.Reboot(s.Log); err != nil {
-				s.Log.Error().Err(err).Msg("Reboot failed")
+				log.Error().Err(err).Msg("Reboot failed")
 			}
 			os.Exit(1)
 		}
@@ -282,41 +282,50 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 
 			// Prepare new worker
 			lctx, cancel = context.WithCancel(ctx)
-			moduleID := s.hostID
-			if alias := conf.GetAlias(); alias != "" {
-				moduleID = alias
-			}
-			log = log.With().Str("module-id", moduleID).Logger()
-			go func(ctx context.Context, conf *api.LocalWorkerConfig) {
-				for {
-					w, err := worker.NewService(worker.Config{
-						LocalWorkerConfig: *conf,
-						ProgramVersion:    s.ProgramVersion,
-						ModuleID:          moduleID,
-					}, worker.Dependencies{
-						Log:    s.Log.With().Str("component", "worker").Logger(),
-						Bridge: s.Bridge,
-					})
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to create worker")
-						// Wait a bit and then retry
-					} else {
-						// Run worker
-						if err := w.Run(ctx, lwControlClient); err != nil {
-							log.Error().Err(err).Msg("Failed to run worker")
+			if conf != nil {
+				moduleID := s.hostID
+				if alias := conf.GetAlias(); alias != "" {
+					moduleID = alias
+				}
+				log = log.With().Str("module-id", moduleID).Logger()
+				go func(ctx context.Context, conf *api.LocalWorkerConfig) {
+					defer func() {
+						if err := recover(); err != nil {
+							fmt.Println(err)
+						}
+					}()
+					for {
+						log.Debug().Msg("Creating new worker service")
+						w, err := worker.NewService(worker.Config{
+							LocalWorkerConfig: *conf,
+							ProgramVersion:    s.ProgramVersion,
+							ModuleID:          moduleID,
+						}, worker.Dependencies{
+							Log:    s.Log.With().Str("component", "worker").Logger(),
+							Bridge: s.Bridge,
+						})
+						if err != nil {
+							log.Error().Err(err).Msg("Failed to create worker")
+							// Wait a bit and then retry
 						} else {
-							log.Info().Err(err).Msg("Worker ended")
+							// Run worker
+							log.Debug().Msg("worker.Run...")
+							if err := w.Run(ctx, lwControlClient); err != nil {
+								log.Error().Err(err).Msg("Failed to run worker")
+							} else {
+								log.Info().Err(err).Msg("Worker ended")
+							}
+						}
+						select {
+						case <-ctx.Done():
+							// Context canceled
+							return
+						case <-time.After(time.Second):
+							// Retry
 						}
 					}
-					select {
-					case <-ctx.Done():
-						// Context canceled
-						return
-					case <-time.After(time.Second):
-						// Retry
-					}
-				}
-			}(lctx, conf)
+				}(lctx, conf)
+			}
 		}
 	})
 

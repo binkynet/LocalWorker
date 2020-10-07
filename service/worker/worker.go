@@ -47,36 +47,40 @@ type service struct {
 
 // Run the worker service until the given context is cancelled.
 func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+	log := s.Log
 	// Open I2C bus
-	s.Log.Debug().Msg("open I2C bus")
+	log.Debug().Msg("open I2C bus")
 	bus, err := s.Bridge.I2CBus()
 	if err != nil {
+		log.Debug().Err(err).Msg("Open I2CBus failed")
 		return maskAny(err)
 	}
 	// Build devices service
-	s.Log.Debug().Msg("build devices service")
+	log.Debug().Msg("build devices service")
 	devService, err := devices.NewService(s.config.GetDevices(), bus, s.Log)
 	if err != nil {
+		log.Debug().Err(err).Msg("devices.NewService failed")
 		return maskAny(err)
 	}
 	s.devService = devService
 
 	defer func() {
-		s.Log.Debug().Msg("closing devices service")
+		log.Debug().Msg("closing devices service")
 		devService.Close()
 	}()
 
 	// Configure devices
-	s.Log.Debug().Msg("configure devices")
+	log.Debug().Msg("configure devices")
 	if err := devService.Configure(ctx); err != nil {
 		// Log error
-		s.Log.Error().Err(err).Msg("Not all devices are configured")
+		log.Error().Err(err).Msg("Not all devices are configured")
 	}
 
 	// Build objects service
-	s.Log.Debug().Msg("build objects service")
+	log.Debug().Msg("build objects service")
 	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, devService, s.Log.With().Str("component", "worker.objects").Logger())
 	if err != nil {
+		log.Debug().Err(err).Msg("objects.NewService failed")
 		return maskAny(err)
 	}
 	s.objService = objService
@@ -91,9 +95,9 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	// Run devices & objects
 	g, lctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		s.Log.Debug().Msg("run devices")
+		log.Debug().Msg("run devices")
 		if err := devService.Run(lctx); err != nil {
-			s.Log.Error().Err(err).Msg("Run failed")
+			log.Error().Err(err).Msg("Run failed")
 			return maskAny(err)
 		}
 		return nil
@@ -101,7 +105,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	g.Go(func() error {
 		s.Log.Debug().Msg("run objects")
 		if err := objService.Run(lctx, lwControlClient); err != nil {
-			s.Log.Error().Err(err).Msg("Run failed")
+			log.Error().Err(err).Msg("Run failed")
 			return maskAny(err)
 		}
 		return nil
