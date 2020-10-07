@@ -9,18 +9,21 @@ REPOPATH := $(ORGPATH)/$(REPONAME)
 BINNAME := bnLocalWorker
 
 SOURCES := $(shell find . -name '*.go')
+BINARIES := ./bin/linux/arm/$(BINNAME) ./bin/linux/amd64/$(BINNAME) ./bin/darwin/amd64/$(BINNAME)
 
 .PHONY: all clean bootstrap binaries test
 
-all: binaries
+all: $(BINARIES) deployment
 
 clean:
 	rm -Rf $(ROOTDIR)/bin
 
 bootstrap:
 	go get github.com/mitchellh/gox
+	docker build -t u-root-builder -f Dockerfile.u-root .
+	docker build -t mkimage-builder -f Dockerfile.mkimage .
 
-binaries: $(SOURCES)
+$(BINARIES): $(SOURCES)
 	CGO_ENABLED=0 gox \
 		-osarch="linux/amd64 linux/arm darwin/amd64" \
 		-ldflags="-X main.projectVersion=$(VERSION) -X main.projectBuild=$(COMMIT)" \
@@ -30,6 +33,33 @@ binaries: $(SOURCES)
 
 test:
 	go test ./...
+
+deployment: ./bin/uInitrd
+
+./bin/linux/arm/uroot.cpio: ./bin/linux/arm/$(BINNAME)
+	docker run -t --rm \
+		-e GOARCH=arm \
+		-v $(ROOTDIR):/project \
+		-w /go/src/github.com/u-root/u-root \
+		u-root-builder \
+		u-root \
+		-format=cpio -build=bb -o /project/bin/linux/arm/uroot.cpio \
+		-files=/project/bin/linux/arm/$(BINNAME):bin/bnLocalWorker \
+		-uinitcmd=/bin/bnLocalWorker \
+		-defaultsh="" \
+		./cmds/core/init
+
+./bin/uInitrd: ./bin/linux/arm/uroot.cpio
+	docker run -t --rm \
+		-v $(ROOTDIR):/project \
+		mkimage-builder \
+		mkimage \
+			-A arm \
+			-O linux \
+			-T ramdisk \
+			-d /project/bin/linux/arm/uroot.cpio \
+			/project/bin/uInitrd
+
 
 .PHONY: update-modules
 update-modules:

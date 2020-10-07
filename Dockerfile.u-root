@@ -1,0 +1,4 @@
+FROM golang:1.14
+
+ENV GO111MODULE=off 
+RUN go get github.com/u-root/u-root
