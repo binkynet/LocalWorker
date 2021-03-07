@@ -17,35 +17,71 @@ package bridge
 import (
 	"sync"
 	"time"
+
+	"github.com/ecc1/gpio"
 )
 
 type orangepizeroBridge struct {
-	mutex sync.Mutex
-	bus   I2CBus
+	mutex    sync.Mutex
+	greenLed statusLed
+	redLed   statusLed
+	bus      I2CBus
 }
+
+const (
+	opzGreenLedPin = 19
+	opzRedLedPin   = 18
+)
 
 // NewOrangePIZeroBridge implements the bridge for an Orange PI Zero
 func NewOrangePIZeroBridge() (API, error) {
-	return &orangepizeroBridge{}, nil
+	activeLow := true
+	initialValue := false
+
+	greenLed, err := gpio.Output(opzGreenLedPin, activeLow, initialValue)
+	if err != nil {
+		return nil, maskAny(err)
+	}
+	redLed, err := gpio.Output(opzRedLedPin, activeLow, initialValue)
+	if err != nil {
+		return nil, maskAny(err)
+	}
+
+	return &orangepizeroBridge{
+		greenLed: statusLed{pin: greenLed},
+		redLed:   statusLed{pin: redLed},
+	}, nil
 }
 
 // Turn Green status led on/off
 func (p *orangepizeroBridge) SetGreenLED(on bool) error {
+	if err := p.greenLed.Set(on); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
 
 // Turn Red status led on/off
 func (p *orangepizeroBridge) SetRedLED(on bool) error {
+	if err := p.redLed.Set(on); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
 
 // Blink Green status led with given duration between on/off
 func (p *orangepizeroBridge) BlinkGreenLED(delay time.Duration) error {
+	if err := p.greenLed.Blink(delay); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
 
 // Blink Red status led with given duration between on/off
 func (p *orangepizeroBridge) BlinkRedLED(delay time.Duration) error {
+	if err := p.redLed.Blink(delay); err != nil {
+		return maskAny(err)
+	}
 	return nil
 }
 
