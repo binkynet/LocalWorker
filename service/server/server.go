@@ -28,6 +28,8 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+
+	api "github.com/binkynet/BinkyNet/apis/v1"
 )
 
 type Server interface {
@@ -37,7 +39,7 @@ type Server interface {
 
 // Service ('s) that we offer
 type Service interface {
-	//api.LogProviderServiceServer
+	api.LogProviderServiceServer
 }
 
 type Config struct {
@@ -86,7 +88,7 @@ func (s *server) Run(ctx context.Context) error {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	)
-	//api.RegisterLogProviderServiceServer(grpcSrv, s.api)
+	api.RegisterLogProviderServiceServer(grpcSrv, s.api)
 	// Register reflection service on gRPC server.
 	reflection.Register(grpcSrv)
 

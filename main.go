@@ -49,7 +49,12 @@ func main() {
 	var grpcPort int
 	var bridgeType string
 
-	logOutput := zerolog.ConsoleWriter{Out: os.Stderr}
+	logWriter := service.NewLogWriter()
+	go logWriter.Run(context.Background())
+	logOutput := zerolog.MultiLevelWriter(
+		zerolog.ConsoleWriter{Out: os.Stderr},
+		logWriter,
+	)
 	logger := zerolog.New(logOutput).With().Timestamp().Logger()
 	defaultBridgeType := environment.AutoDetectBridgeType(logger)
 
@@ -86,8 +91,9 @@ func main() {
 	svc, err := service.NewService(service.Config{
 		ProgramVersion: version,
 	}, service.Dependencies{
-		Log:    logger,
-		Bridge: br,
+		Log:       logger,
+		LogWriter: logWriter,
+		Bridge:    br,
 	})
 	if err != nil {
 		Exitf("Failed to initialize Service: %v\n", err)

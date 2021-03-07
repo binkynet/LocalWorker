@@ -13,7 +13,7 @@ BINARIES := ./bin/linux/arm/$(BINNAME) ./bin/linux/amd64/$(BINNAME) ./bin/darwin
 
 .PHONY: all clean bootstrap binaries test
 
-all: $(BINARIES) deployment
+all: binaries deployment
 
 clean:
 	rm -Rf $(ROOTDIR)/bin
@@ -22,6 +22,8 @@ bootstrap:
 	go get github.com/mitchellh/gox
 	docker build -t u-root-builder -f Dockerfile.u-root .
 	docker build -t mkimage-builder -f Dockerfile.mkimage .
+
+binaries: $(BINARIES)
 
 $(BINARIES): $(SOURCES)
 	CGO_ENABLED=0 gox \

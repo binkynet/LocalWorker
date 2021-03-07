@@ -101,7 +101,7 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	}
 	servoDev, err := getPWMForPin(servoPin, devService)
 	if err != nil {
-		return nil, model.InvalidArgument("%s: (connection %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
+		return nil, model.InvalidArgument("%s: (connection %s in object %s)", err.Error(), model.ConnectionNameServo, oid)
 	}
 	straightPL := servoConn.GetIntConfig("straight", 150)
 	offPL := servoConn.GetIntConfig("off", 550)
