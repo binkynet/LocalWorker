@@ -20,12 +20,12 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"log"
 	"net"
 	"strconv"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -45,6 +45,7 @@ type Service interface {
 type Config struct {
 	Host     string
 	GRPCPort int
+	Version  string
 }
 
 func (c Config) createTLSConfig() (*tls.Config, error) {
@@ -70,6 +71,7 @@ type server struct {
 
 // Run the HTTP server until the given context is cancelled.
 func (s *server) Run(ctx context.Context) error {
+	log := s.log
 	// Create TLS config
 	/*tlsConfig, err := s.Config.createTLSConfig()
 	if err != nil {
@@ -80,7 +82,8 @@ func (s *server) Run(ctx context.Context) error {
 	grpcAddr := net.JoinHostPort(s.Host, strconv.Itoa(s.GRPCPort))
 	grpcLis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
-		log.Fatalf("failed to listen on address %s: %v", grpcAddr, err)
+		log.Error().Err(err).Str("address", grpcAddr).Msg("failed to listen")
+		return err
 	}
 
 	// Prepare GRPC server
@@ -89,25 +92,38 @@ func (s *server) Run(ctx context.Context) error {
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	)
 	api.RegisterLogProviderServiceServer(grpcSrv, s.api)
-	api.RegisterServiceEntry(ctx, api.ServiceTypeLogProvider, api.ServiceInfo{
-		ApiVersion: "v1",
-		Version:    "todo",
-		ApiPort:    int32(s.GRPCPort),
-		Secure:     false,
-	})
 	// Register reflection service on gRPC server.
 	reflection.Register(grpcSrv)
 
-	go func() {
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
 		if err := grpcSrv.Serve(grpcLis); err != nil {
-			log.Fatalf("failed to serve GRPC: %v", err)
+			log.Error().Err(err).Msg("failed to serve GRPC")
+			return err
 		}
-	}()
-	select {
-	case <-ctx.Done():
-		// Close server
-		s.log.Debug().Msg("Closing server...")
-		grpcSrv.GracefulStop()
 		return nil
+	})
+	g.Go(func() error {
+		api.RegisterServiceEntry(ctx, api.ServiceTypeLogProvider, api.ServiceInfo{
+			ApiVersion: "v1",
+			Version:    s.Version,
+			ApiPort:    int32(s.GRPCPort),
+			Secure:     false,
+		})
+		return nil
+	})
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			// Close server
+			log.Debug().Msg("Closing server...")
+			grpcSrv.GracefulStop()
+			return nil
+		}
+	})
+	if err := g.Wait(); err != nil {
+		log.Warn().Err(err).Msg("Server failed")
+		return err
 	}
+	return nil
 }

@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
@@ -49,6 +50,10 @@ func (w *LogWriter) Write(p []byte) (n int, err error) {
 
 // WriteLevel writes a message at given level
 func (w *LogWriter) WriteLevel(l zerolog.Level, p []byte) (n int, err error) {
+	w.input <- logMessage{
+		Level: l,
+		Msg:   p,
+	}
 	return len(p), nil
 }
 
@@ -102,6 +107,7 @@ func (w *LogWriter) Subscribe() (<-chan logMessage, context.CancelFunc) {
 
 // Record a log message.
 func (s *service) GetLogs(req *api.GetLogsRequest, server api.LogProviderService_GetLogsServer) error {
+	fmt.Println("GetLogs: Subscribe")
 	messages, cancel := s.LogWriter.Subscribe()
 	defer cancel()
 
@@ -123,13 +129,17 @@ func (s *service) GetLogs(req *api.GetLogsRequest, server api.LogProviderService
 	}
 
 	for msg := range messages {
+		fmt.Println("GetLogs: Send")
 		if err := server.Send(&api.LogEntry{
 			Message: string(msg.Msg),
 			Level:   createLevel(msg.Level),
 		}); err != nil {
+			fmt.Printf("GetLogs: Send failed: %s\n", err)
 			return err
 		}
+		fmt.Println("GetLogs: Send succeeded")
 	}
 
+	fmt.Println("GetLogs: ended")
 	return nil
 }

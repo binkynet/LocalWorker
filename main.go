@@ -104,6 +104,7 @@ func main() {
 	httpServer, err := server.NewServer(server.Config{
 		Host:     serverHost,
 		GRPCPort: grpcPort,
+		Version:  version,
 	}, svc, logger)
 	if err != nil {
 		Exitf("Failed to initialize Server: %v\n", err)
