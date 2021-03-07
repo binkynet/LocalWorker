@@ -72,3 +72,6 @@ update-modules:
 	go get -u \
 		github.com/binkynet/BinkyNet@v0.3.0
 	go mod tidy
+
+deploy:
+	scp bin/uInitrd pi@192.168.77.1:/home/pi/tftp/

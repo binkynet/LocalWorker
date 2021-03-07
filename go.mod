@@ -11,6 +11,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/juju/errgo v0.0.0-20140925100237-08cceb5d0b53
 	github.com/mattn/go-pubsub v0.0.0-20160821075316-7a151c7747cd
+	github.com/mitchellh/gox v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.9.0 // indirect
 	github.com/pulcy/go-terminate v0.0.0-20160630075856-d486fe7ee814
