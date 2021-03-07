@@ -125,7 +125,7 @@ func (s *service) GetLogs(req *api.GetLogsRequest, server api.LogProviderService
 	for msg := range messages {
 		if err := server.Send(&api.LogEntry{
 			Message: string(msg.Msg),
-			String_: createLevel(msg.Level),
+			Level:   createLevel(msg.Level),
 		}); err != nil {
 			return err
 		}

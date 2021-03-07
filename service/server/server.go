@@ -89,6 +89,12 @@ func (s *server) Run(ctx context.Context) error {
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	)
 	api.RegisterLogProviderServiceServer(grpcSrv, s.api)
+	api.RegisterServiceEntry(ctx, api.ServiceTypeLogProvider, api.ServiceInfo{
+		ApiVersion: "v1",
+		Version:    "todo",
+		ApiPort:    int32(s.GRPCPort),
+		Secure:     false,
+	})
 	// Register reflection service on gRPC server.
 	reflection.Register(grpcSrv)
 

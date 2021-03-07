@@ -25,6 +25,8 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 
+	api "github.com/binkynet/BinkyNet/apis/v1"
+
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
@@ -109,6 +111,7 @@ func main() {
 
 	// Prepare to shutdown in a controlled manor
 	ctx, cancel := context.WithCancel(context.Background())
+	ctx = api.WithServiceInfoHost(ctx, serverHost)
 	t := terminate.NewTerminator(func(template string, args ...interface{}) {
 		logger.Info().Msgf(template, args...)
 	}, cancel)
