@@ -129,7 +129,6 @@ func (s *service) GetLogs(req *api.GetLogsRequest, server api.LogProviderService
 	}
 
 	for msg := range messages {
-		fmt.Println("GetLogs: Send")
 		if err := server.Send(&api.LogEntry{
 			Message: string(msg.Msg),
 			Level:   createLevel(msg.Level),
@@ -137,7 +136,6 @@ func (s *service) GetLogs(req *api.GetLogsRequest, server api.LogProviderService
 			fmt.Printf("GetLogs: Send failed: %s\n", err)
 			return err
 		}
-		fmt.Println("GetLogs: Send succeeded")
 	}
 
 	fmt.Println("GetLogs: ended")
