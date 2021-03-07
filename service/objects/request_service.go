@@ -26,6 +26,8 @@ import (
 
 	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
+
+	utils "github.com/binkynet/LocalWorker/service/util"
 )
 
 // RequestService is used by object types to receive requests from the network master.
@@ -68,7 +70,7 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 			}
 			return nil
 		}
-		return untilCanceled(ctx, log, "receiveOutputRequests", once)
+		return utils.UntilCanceled(ctx, log, "receiveOutputRequests", once)
 	})
 	// Receive switch requests
 	g.Go(func() error {
@@ -89,7 +91,7 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 			}
 			return nil
 		}
-		return untilCanceled(ctx, log, "receiveSwitchRequests", once)
+		return utils.UntilCanceled(ctx, log, "receiveSwitchRequests", once)
 	})
 	return g.Wait()
 }

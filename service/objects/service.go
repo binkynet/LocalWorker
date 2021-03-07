@@ -28,6 +28,8 @@ import (
 	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
+
+	utils "github.com/binkynet/LocalWorker/service/util"
 )
 
 // Service contains the API that is exposed by the object service.
@@ -246,5 +248,5 @@ func (s *service) receivePowerMessages(ctx context.Context, lwControlClient mode
 			}
 		}
 	}
-	return untilCanceled(ctx, log, "receivePowerMessages", once)
+	return utils.UntilCanceled(ctx, log, "receivePowerMessages", once)
 }

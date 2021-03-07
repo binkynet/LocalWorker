@@ -57,7 +57,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	}
 	// Build devices service
 	log.Debug().Msg("build devices service")
-	devService, err := devices.NewService(s.config.GetDevices(), bus, s.Log)
+	devService, err := devices.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.GetDevices(), bus, s.Log)
 	if err != nil {
 		log.Debug().Err(err).Msg("devices.NewService failed")
 		return maskAny(err)
@@ -96,7 +96,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	g, lctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		log.Debug().Msg("run devices")
-		if err := devService.Run(lctx); err != nil {
+		if err := devService.Run(lctx, lwControlClient); err != nil {
 			log.Error().Err(err).Msg("Run failed")
 			return maskAny(err)
 		}

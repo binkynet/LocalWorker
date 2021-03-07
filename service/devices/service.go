@@ -19,13 +19,17 @@ package devices
 
 import (
 	"context"
+	"fmt"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
+
 	"github.com/binkynet/LocalWorker/service/bridge"
+	utils "github.com/binkynet/LocalWorker/service/util"
 )
 
 // Service contains the API that is exposed by the device service.
@@ -36,12 +40,14 @@ type Service interface {
 	// Configure is called once to put all devices in the desired state.
 	Configure(ctx context.Context) error
 	// Run the service until the given context is canceled.
-	Run(ctx context.Context) error
+	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
 	// Close brings all devices back to a safe state.
 	Close() error
 }
 
 type service struct {
+	moduleID          string
+	programVersion    string
 	log               zerolog.Logger
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
@@ -50,8 +56,10 @@ type service struct {
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(moduleID, programVersion string, configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
+		moduleID:          moduleID,
+		programVersion:    programVersion,
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
@@ -109,31 +117,8 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run the service until the given context is canceled.
-func (s *service) Run(ctx context.Context) error {
-	/*msg := struct {
-		Slaves []string `json:"slave-addresses"`
-	}{}
-	topic := path.Join(topicPrefix, "bus")
-	s.log.Debug().Str("topic", topic).Msg("Broadcasting bus addresses...")
-	for {
-		// Poll slave addresses
-		addrs := s.bus.DetectSlaveAddresses()
-		msg.Slaves = nil
-		for _, addr := range addrs {
-			msg.Slaves = append(msg.Slaves, fmt.Sprintf("0x%0x", addr))
-		}
-		mqttService.Publish(ctx, msg, topic, mqtt.QosDefault)
-
-		select {
-		case <-time.After(time.Minute):
-			// Continue
-		case <-ctx.Done():
-			// Context canceled
-			return nil
-		}
-	}*/
-	<-ctx.Done()
-	return nil
+func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+	return s.receiveDiscoverMessages(ctx, lwControlClient)
 }
 
 // Close brings all devices back to a safe state.
@@ -145,4 +130,44 @@ func (s *service) Close() error {
 		}
 	}
 	return ae.AsError()
+}
+
+// Run subscribed to discover messages and processed them
+// until the given context is cancelled.
+func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+	log := s.log
+	once := func() error {
+		stream, err := lwControlClient.GetDiscoverRequests(ctx, &model.LocalWorkerInfo{
+			Id: s.moduleID,
+		})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to request discover messages")
+			return err
+		}
+		defer stream.CloseSend()
+		for {
+			_, err := stream.Recv()
+			if util.IsStreamClosed(err) || ctx.Err() != nil {
+				return nil
+			} else if err != nil {
+				log.Warn().Err(err).Msg("Recv failed")
+				return err
+			}
+			// Process discover request
+			log.Debug().Msg("Receiver discover request")
+
+			addrs := s.bus.DetectSlaveAddresses()
+			result := &model.DiscoverResult{
+				Id: s.moduleID,
+			}
+			for _, addr := range addrs {
+				result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
+			}
+			if _, err := lwControlClient.SetDiscoverResult(ctx, result); err != nil {
+				log.Warn().Err(err).Msg("SetDiscoverResult failed")
+				return err
+			}
+		}
+	}
+	return utils.UntilCanceled(ctx, log, "receiveDiscoverMessages", once)
 }

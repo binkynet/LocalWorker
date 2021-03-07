@@ -18,42 +18,9 @@
 package objects
 
 import (
-	"context"
-	"time"
-
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/rs/zerolog"
 )
-
-// untilCanceled continues to call the given callback
-// until the given context is canceled
-func untilCanceled(ctx context.Context, log zerolog.Logger, description string, cb func() error) error {
-	delay := time.Millisecond * 10
-	for {
-		if ctx.Err() != nil {
-			// Context canceled
-			return nil
-		}
-		if err := cb(); err != nil {
-			log.Warn().Err(err).Msgf("%s failed", description)
-			delay = time.Duration(float64(delay) * 1.5)
-			if delay > time.Second*5 {
-				delay = time.Second * 5
-			}
-		} else {
-			delay = time.Millisecond * 10
-		}
-		select {
-		case <-ctx.Done():
-			// Context canceled
-			return nil
-		case <-time.After(delay):
-			// Continue
-		}
-	}
-
-}
 
 // getSinglePin looks up the pin with given name in the given configurable.
 // If not found, an error is returned.
