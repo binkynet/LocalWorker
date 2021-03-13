@@ -23,7 +23,6 @@ import (
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 
 	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
@@ -46,6 +45,7 @@ type Service interface {
 }
 
 type service struct {
+	hardwareID        string
 	moduleID          string
 	programVersion    string
 	log               zerolog.Logger
@@ -56,8 +56,9 @@ type service struct {
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(moduleID, programVersion string, configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(hardwareID, moduleID, programVersion string, configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
+		hardwareID:        hardwareID,
 		moduleID:          moduleID,
 		programVersion:    programVersion,
 		log:               log.With().Str("component", "device-service").Logger(),
@@ -95,6 +96,7 @@ func (s *service) DeviceByID(id model.DeviceID) (Device, bool) {
 
 // Configure is called once to put all devices in the desired state.
 func (s *service) Configure(ctx context.Context) error {
+	log := s.log
 	var ae aerr.AggregateError
 	configuredDevices := make(map[model.DeviceID]Device)
 	for id, d := range s.devices {
@@ -137,8 +139,9 @@ func (s *service) Close() error {
 func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
 	log := s.log
 	once := func() error {
+		log.Debug().Msg("Opening GetDiscoverRequests stream...")
 		stream, err := lwControlClient.GetDiscoverRequests(ctx, &model.LocalWorkerInfo{
-			Id: s.moduleID,
+			Id: s.hardwareID,
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to request discover messages")
@@ -146,15 +149,17 @@ func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient m
 		}
 		defer stream.CloseSend()
 		for {
+			log.Debug().Msg("Waiting to receive discover request...")
 			_, err := stream.Recv()
 			if util.IsStreamClosed(err) || ctx.Err() != nil {
+				log.Info().Msg("Stream closed or context canceled")
 				return nil
 			} else if err != nil {
 				log.Warn().Err(err).Msg("Recv failed")
 				return err
 			}
 			// Process discover request
-			log.Debug().Msg("Receiver discover request")
+			log.Debug().Msg("Received discover request")
 
 			addrs := s.bus.DetectSlaveAddresses()
 			result := &model.DiscoverResult{

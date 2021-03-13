@@ -316,6 +316,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 						w, err := worker.NewService(worker.Config{
 							LocalWorkerConfig: *conf,
 							ProgramVersion:    s.ProgramVersion,
+							HardwareID:        s.hostID,
 							ModuleID:          moduleID,
 						}, worker.Dependencies{
 							Log:    s.Log.With().Str("component", "worker").Logger(),
