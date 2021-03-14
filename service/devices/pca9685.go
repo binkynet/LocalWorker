@@ -26,9 +26,10 @@ import (
 )
 
 type pca9685 struct {
-	config  model.Device
-	bus     bridge.I2CBus
-	address byte
+	onActive func()
+	config   model.Device
+	bus      bridge.I2CBus
+	address  byte
 }
 
 const (
@@ -44,7 +45,7 @@ const (
 )
 
 // newPCA9685 creates a PWM instance for a pca9685 device with given config.
-func newPCA9685(config model.Device, bus bridge.I2CBus) (PWM, error) {
+func newPCA9685(config model.Device, bus bridge.I2CBus, onActive func()) (PWM, error) {
 	if config.Type != model.DeviceTypePCA9685 {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
@@ -53,9 +54,10 @@ func newPCA9685(config model.Device, bus bridge.I2CBus) (PWM, error) {
 		return nil, err
 	}
 	return &pca9685{
-		config:  config,
-		bus:     bus,
-		address: byte(address),
+		onActive: onActive,
+		config:   config,
+		bus:      bus,
+		address:  byte(address),
 	}, nil
 }
 
@@ -70,6 +72,7 @@ func (d *pca9685) Configure(ctx context.Context) error {
 	prescale := uint8(math.Floor(prescaleval + 0.5))
 
 	// Set MODE1: SLEEP=1, ALLCALL=1
+	d.onActive()
 	mode1 := uint8(0x11)
 	if err := d.bus.WriteByteReg(d.address, pca9685MODE1Reg, mode1); err != nil {
 		return err
@@ -89,6 +92,7 @@ func (d *pca9685) Configure(ctx context.Context) error {
 func (d *pca9685) Close() error {
 	// Set MODE1: SLEEP=1, ALLCALL=1
 	mode1 := uint8(0x11)
+	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, pca9685MODE1Reg, mode1); err != nil {
 		return err
 	}
@@ -111,6 +115,7 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 	if err != nil {
 		return err
 	}
+	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, uint8(regBase+pca9685OnLowRegOfs), uint8(onValue&0xFF)); err != nil {
 		return err
 	}

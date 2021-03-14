@@ -20,9 +20,12 @@ package devices
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
@@ -52,11 +55,13 @@ type service struct {
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
 	bus               bridge.I2CBus
+	bAPI              bridge.API
+	activeCount       uint32
 }
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(hardwareID, moduleID, programVersion string, configs []*model.Device, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(hardwareID, moduleID, programVersion string, configs []*model.Device, bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		hardwareID:        hardwareID,
 		moduleID:          moduleID,
@@ -65,17 +70,18 @@ func NewService(hardwareID, moduleID, programVersion string, configs []*model.De
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
 		bus:               bus,
+		bAPI:              bAPI,
 	}
 	for _, c := range configs {
 		var dev Device
 		var err error
 		switch c.Type {
 		case model.DeviceTypeMCP23008:
-			dev, err = newMcp23008(*c, bus)
+			dev, err = newMcp23008(*c, bus, s.onActive)
 		case model.DeviceTypeMCP23017:
-			dev, err = newMcp23017(*c, bus)
+			dev, err = newMcp23017(*c, bus, s.onActive)
 		case model.DeviceTypePCA9685:
-			dev, err = newPCA9685(*c, bus)
+			dev, err = newPCA9685(*c, bus, s.onActive)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}
@@ -120,7 +126,10 @@ func (s *service) Configure(ctx context.Context) error {
 
 // Run the service until the given context is canceled.
 func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
-	return s.receiveDiscoverMessages(ctx, lwControlClient)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return s.receiveDiscoverMessages(ctx, lwControlClient) })
+	g.Go(func() error { return s.runActiveNotify(ctx) })
+	return g.Wait()
 }
 
 // Close brings all devices back to a safe state.
@@ -132,6 +141,36 @@ func (s *service) Close() error {
 		}
 	}
 	return ae.AsError()
+}
+
+// onActive is called when a device change is activated.
+func (s *service) onActive() {
+	atomic.AddUint32(&s.activeCount, 1)
+}
+
+// runActiveNotify updates the blinking status when a device has become active
+func (s *service) runActiveNotify(ctx context.Context) error {
+	lastActiveCount := uint32(0)
+	count := 0
+	for {
+		select {
+		case <-ctx.Done():
+			// Context canceled
+			return nil
+		case <-time.After(time.Second / 10):
+			newActiveCount := atomic.LoadUint32(&s.activeCount)
+			if newActiveCount != lastActiveCount {
+				lastActiveCount = newActiveCount
+				s.bAPI.BlinkRedLED(time.Second / 10)
+				count = 0
+			} else if count < 20 {
+				count++
+			} else {
+				count = 0
+				s.bAPI.SetRedLED(false)
+			}
+		}
+	}
 }
 
 // Run subscribed to discover messages and processed them

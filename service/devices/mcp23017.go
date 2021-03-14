@@ -27,11 +27,12 @@ import (
 )
 
 type mcp23017 struct {
-	config  model.Device
-	bus     bridge.I2CBus
-	address byte
-	iodir   []byte
-	value   []byte
+	onActive func()
+	config   model.Device
+	bus      bridge.I2CBus
+	address  byte
+	iodir    []byte
+	value    []byte
 }
 
 const (
@@ -60,7 +61,7 @@ const (
 )
 
 // newMcp23017 creates a GPIO instance for a mcp23017 device with given config.
-func newMcp23017(config model.Device, bus bridge.I2CBus) (GPIO, error) {
+func newMcp23017(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO, error) {
 	if config.Type != model.DeviceTypeMCP23017 {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
@@ -69,11 +70,12 @@ func newMcp23017(config model.Device, bus bridge.I2CBus) (GPIO, error) {
 		return nil, err
 	}
 	return &mcp23017{
-		config:  config,
-		bus:     bus,
-		address: byte(address),
-		iodir:   []byte{0xff, 0xff},
-		value:   []byte{0, 0},
+		onActive: onActive,
+		config:   config,
+		bus:      bus,
+		address:  byte(address),
+		iodir:    []byte{0xff, 0xff},
+		value:    []byte{0, 0},
 	}, nil
 }
 
@@ -81,6 +83,7 @@ func newMcp23017(config model.Device, bus bridge.I2CBus) (GPIO, error) {
 func (d *mcp23017) Configure(ctx context.Context) error {
 	d.iodir[0] = 0xff
 	d.iodir[1] = 0xff
+	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, mcp23017RegIOCON, 0x20); err != nil {
 		return err
 	}
@@ -98,6 +101,7 @@ func (d *mcp23017) Close() error {
 	// Restore all to input
 	d.iodir[0] = 0xff
 	d.iodir[1] = 0xff
+	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
 		return err
 	}
@@ -118,6 +122,7 @@ func (d *mcp23017) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 	if err != nil {
 		return err
 	}
+	d.onActive()
 	if direction == PinDirectionInput {
 		d.iodir[regOffset] |= mask
 	} else {
@@ -153,6 +158,7 @@ func (d *mcp23017) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 	}
 	if d.iodir[regOffset]&mask == 0 {
 		// IODIR == output
+		d.onActive()
 		if value {
 			d.value[regOffset] |= mask
 		} else {

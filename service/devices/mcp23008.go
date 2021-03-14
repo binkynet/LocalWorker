@@ -27,11 +27,12 @@ import (
 )
 
 type mcp23008 struct {
-	config  model.Device
-	bus     bridge.I2CBus
-	address byte
-	iodir   byte
-	value   byte
+	onActive func()
+	config   model.Device
+	bus      bridge.I2CBus
+	address  byte
+	iodir    byte
+	value    byte
 }
 
 const (
@@ -50,7 +51,7 @@ const (
 )
 
 // newMcp23008 creates a GPIO instance for a mcp23008 device with given config.
-func newMcp23008(config model.Device, bus bridge.I2CBus) (GPIO, error) {
+func newMcp23008(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO, error) {
 	if config.Type != model.DeviceTypeMCP23008 {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
@@ -59,17 +60,19 @@ func newMcp23008(config model.Device, bus bridge.I2CBus) (GPIO, error) {
 		return nil, err
 	}
 	return &mcp23008{
-		config:  config,
-		bus:     bus,
-		address: byte(address),
-		iodir:   0xff,
-		value:   0,
+		onActive: onActive,
+		config:   config,
+		bus:      bus,
+		address:  byte(address),
+		iodir:    0xff,
+		value:    0,
 	}, nil
 }
 
 // Configure is called once to put the device in the desired state.
 func (d *mcp23008) Configure(ctx context.Context) error {
 	d.iodir = 0xff
+	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIOCON, 0x20); err != nil {
 		return err
 	}
@@ -83,6 +86,7 @@ func (d *mcp23008) Configure(ctx context.Context) error {
 func (d *mcp23008) Close() error {
 	// Restore all to input
 	d.iodir = 0xff
+	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIODIR, d.iodir); err != nil {
 		return err
 	}
@@ -100,6 +104,7 @@ func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 	if err != nil {
 		return err
 	}
+	d.onActive()
 	if direction == PinDirectionInput {
 		d.iodir |= mask
 	} else {
@@ -135,6 +140,7 @@ func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 	}
 	if d.iodir&mask == 0 {
 		// IODIR == output
+		d.onActive()
 		if value {
 			d.value |= mask
 		} else {

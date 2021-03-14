@@ -60,7 +60,7 @@ func (l *statusLed) Blink(delay time.Duration) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	l.cancelBlink = cancel
 	go func() {
-		value := false
+		value := true
 		for {
 			l.Mutex.Lock()
 			if ctx.Err() == nil {

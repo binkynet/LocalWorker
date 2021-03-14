@@ -58,7 +58,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	}
 	// Build devices service
 	log.Debug().Msg("build devices service")
-	devService, err := devices.NewService(s.config.HardwareID, s.config.ModuleID, s.config.ProgramVersion, s.config.GetDevices(), bus, s.Log)
+	devService, err := devices.NewService(s.config.HardwareID, s.config.ModuleID, s.config.ProgramVersion, s.config.GetDevices(), s.Bridge, bus, s.Log)
 	if err != nil {
 		log.Debug().Err(err).Msg("devices.NewService failed")
 		return maskAny(err)
