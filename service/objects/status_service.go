@@ -20,6 +20,7 @@ package objects
 import (
 	"context"
 
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
@@ -50,7 +51,7 @@ func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorker
 	g, ctx := errgroup.WithContext(ctx)
 	// Send output actuals
 	g.Go(func() error {
-		server, err := lwControlClient.SetOutputActuals(ctx)
+		server, err := lwControlClient.SetOutputActuals(ctx, grpc_retry.Disable())
 		if err != nil {
 			return err
 		}
@@ -69,7 +70,7 @@ func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorker
 	})
 	// Send sensor actuals
 	g.Go(func() error {
-		server, err := lwControlClient.SetSensorActuals(ctx)
+		server, err := lwControlClient.SetSensorActuals(ctx, grpc_retry.Disable())
 		if err != nil {
 			return err
 		}
@@ -88,7 +89,7 @@ func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorker
 	})
 	// Send switch actuals
 	g.Go(func() error {
-		server, err := lwControlClient.SetSwitchActuals(ctx)
+		server, err := lwControlClient.SetSwitchActuals(ctx, grpc_retry.Disable())
 		if err != nil {
 			return err
 		}

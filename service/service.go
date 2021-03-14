@@ -17,22 +17,21 @@ package service
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	discovery "github.com/binkynet/BinkyNet/discovery"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/service/bridge"
+	grpcutil "github.com/binkynet/LocalWorker/service/util"
 	"github.com/binkynet/LocalWorker/service/worker"
 )
 
@@ -137,7 +136,7 @@ func (s *service) Run(ctx context.Context) error {
 
 		if err := func(lwConfigInfo *api.ServiceInfo, lwControlInfo *api.ServiceInfo) error {
 			// Dialog connection to lwConfig
-			lwConfigConn, err := dialConn(lwConfigInfo)
+			lwConfigConn, err := grpcutil.DialConn(lwConfigInfo)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to dial LocalWorkerConfig service")
 				return nil
@@ -145,7 +144,7 @@ func (s *service) Run(ctx context.Context) error {
 			defer lwConfigConn.Close()
 			lwConfigClient := api.NewLocalWorkerConfigServiceClient(lwConfigConn)
 			// Dialog connection to lwControl
-			lwControlConn, err := dialConn(lwControlInfo)
+			lwControlConn, err := grpcutil.DialConn(lwControlInfo)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to dial LocalWorkerControl service")
 				return nil
@@ -221,6 +220,8 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 
 	configChanged := make(chan *api.LocalWorkerConfig)
 	defer close(configChanged)
+	stopWorker := make(chan struct{})
+	defer close(stopWorker)
 	g, ctx := errgroup.WithContext(ctx)
 
 	loadConfigStream := func(log zerolog.Logger) error {
@@ -229,7 +230,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 			Description: "Local worker",
 			Version:     s.ProgramVersion,
 			Uptime:      0, // TODO
-		})
+		}, grpc_retry.WithMax(3))
 		if err != nil {
 			log.Debug().Err(err).Msg("GetConfig failed.")
 			return err
@@ -258,15 +259,28 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 	// Request configuration in stream
 	g.Go(func() error {
 		log := log.With().Str("component", "config-reader").Logger()
+		recentErrors := 0
+		workerStopped := false
 		for {
+			delay := time.Second * 5
 			if err := loadConfigStream(log); err != nil {
 				log.Warn().Err(err).Msg("loadConfigStream failed")
+				recentErrors++
+				delay = time.Second
+			} else {
+				recentErrors = 0
+				workerStopped = false
+			}
+			if recentErrors > 10 && !workerStopped {
+				// Too many recent errors, stop the worker
+				stopWorker <- struct{}{}
+				workerStopped = true
 			}
 			select {
 			case <-ctx.Done():
 				// Context canceled
 				return nil
-			case <-time.After(time.Second * 2):
+			case <-time.After(delay):
 				// Retry
 			}
 		}
@@ -289,6 +303,10 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 					log.Warn().Msg("Received nil configuration")
 					continue
 				}
+			case <-stopWorker:
+				log.Info().Msg("Stop worker")
+				conf = nil
+				cancel()
 			case <-ctx.Done():
 				// Context canceled
 				cancel()
@@ -348,13 +366,4 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 	})
 
 	return g.Wait()
-}
-
-func dialConn(info *api.ServiceInfo) (*grpc.ClientConn, error) {
-	address := net.JoinHostPort(info.GetApiAddress(), strconv.Itoa(int(info.GetApiPort())))
-	var opts []grpc.DialOption
-	if !info.Secure {
-		opts = append(opts, grpc.WithInsecure())
-	}
-	return grpc.Dial(address, opts...)
 }
