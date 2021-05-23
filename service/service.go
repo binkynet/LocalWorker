@@ -258,7 +258,6 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 	g.Go(func() error {
 		log := log.With().Str("component", "config-reader").Logger()
 		recentErrors := 0
-		workerStopped := false
 		for {
 			delay := time.Second * 5
 			if err := loadConfigStream(log); err != nil {
@@ -267,12 +266,12 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 				delay = time.Second
 			} else {
 				recentErrors = 0
-				workerStopped = false
 			}
-			if recentErrors > 10 && !workerStopped {
+			if recentErrors > 10 {
 				// Too many recent errors, stop the worker
+				log.Debug().Msg("Stopping worker because of too many recent errors")
 				stopWorker <- struct{}{}
-				workerStopped = true
+				return nil
 			}
 			select {
 			case <-ctx.Done():
