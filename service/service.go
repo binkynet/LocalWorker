@@ -38,7 +38,6 @@ import (
 type Service interface {
 	// Run the worker until the given context is cancelled.
 	Run(ctx context.Context) error
-	api.LogProviderServiceServer
 }
 
 type Config struct {
@@ -46,9 +45,8 @@ type Config struct {
 }
 
 type Dependencies struct {
-	Log       zerolog.Logger
-	Bridge    bridge.API
-	LogWriter *LogWriter
+	Log    zerolog.Logger
+	Bridge bridge.API
 }
 
 type service struct {

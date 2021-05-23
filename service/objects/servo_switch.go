@@ -103,9 +103,9 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	if err != nil {
 		return nil, model.InvalidArgument("%s: (connection %s in object %s)", err.Error(), model.ConnectionNameServo, oid)
 	}
-	straightPL := servoConn.GetIntConfig("straight", 150)
-	offPL := servoConn.GetIntConfig("off", 550)
-	stepSize := maxInt(1, servoConn.GetIntConfig("step", 5))
+	straightPL := servoConn.GetIntConfig(model.ConfigKeyServoStraight)
+	offPL := servoConn.GetIntConfig(model.ConfigKeyServoOff)
+	stepSize := maxInt(1, servoConn.GetIntConfig(model.ConfigKeyServoStep))
 	sw := &servoSwitch{
 		log:       log,
 		config:    config,

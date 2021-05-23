@@ -1,4 +1,4 @@
-//    Copyright 2018 Ewout Prangsma
+//    Copyright 2018-2021 Ewout Prangsma
 //
 //    Licensed under the Apache License, Version 2.0 (the "License");
 //    you may not use this file except in compliance with the License.
@@ -26,11 +26,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
+	"github.com/binkynet/BinkyNet/netlog"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
-	"github.com/binkynet/LocalWorker/service/server"
 )
 
 const (
@@ -51,8 +51,10 @@ func main() {
 	var grpcPort int
 	var bridgeType string
 
-	logWriter := service.NewLogWriter()
-	go logWriter.Run(context.Background())
+	logWriter, err := netlog.NewLogger()
+	if err != nil {
+		Exitf("Failed to create log writer: %s", err)
+	}
 	logOutput := zerolog.MultiLevelWriter(
 		zerolog.ConsoleWriter{Out: os.Stderr},
 		logWriter,
@@ -67,7 +69,6 @@ func main() {
 	pflag.Parse()
 
 	var br bridge.API
-	var err error
 	switch bridgeType {
 	case "rpi":
 		br, err = bridge.NewRaspberryPiBridge()
@@ -93,21 +94,11 @@ func main() {
 	svc, err := service.NewService(service.Config{
 		ProgramVersion: version,
 	}, service.Dependencies{
-		Log:       logger,
-		LogWriter: logWriter,
-		Bridge:    br,
+		Log:    logger,
+		Bridge: br,
 	})
 	if err != nil {
 		Exitf("Failed to initialize Service: %v\n", err)
-	}
-
-	httpServer, err := server.NewServer(server.Config{
-		Host:     serverHost,
-		GRPCPort: grpcPort,
-		Version:  version,
-	}, svc, logger)
-	if err != nil {
-		Exitf("Failed to initialize Server: %v\n", err)
 	}
 
 	// Prepare to shutdown in a controlled manor
@@ -121,7 +112,6 @@ func main() {
 	fmt.Printf("Starting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return svc.Run(ctx) })
-	g.Go(func() error { return httpServer.Run(ctx) })
 	if err := g.Wait(); err != nil {
 		Exitf("Service run failed: %#v", err)
 	}
