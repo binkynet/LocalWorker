@@ -60,6 +60,7 @@ func main() {
 		logWriter,
 	)
 	logger := zerolog.New(logOutput).With().Timestamp().Logger()
+	logger.Info().Msg("Started logger on console & netlog")
 	defaultBridgeType := environment.AutoDetectBridgeType(logger)
 
 	pflag.StringVarP(&levelFlag, "level", "l", "debug", "Set log level")
