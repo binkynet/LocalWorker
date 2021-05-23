@@ -98,17 +98,19 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	g.Go(func() error {
 		log.Debug().Msg("run devices")
 		if err := devService.Run(lctx, lwControlClient); err != nil {
-			log.Error().Err(err).Msg("Run failed")
+			log.Error().Err(err).Msg("Run devices failed")
 			return maskAny(err)
 		}
+		log.Debug().Msg("run devices ended")
 		return nil
 	})
 	g.Go(func() error {
 		s.Log.Debug().Msg("run objects")
 		if err := objService.Run(lctx, lwControlClient); err != nil {
-			log.Error().Err(err).Msg("Run failed")
+			log.Error().Err(err).Msg("Run objects failed")
 			return maskAny(err)
 		}
+		s.Log.Debug().Msg("run objects ended")
 		return nil
 	})
 	if err := g.Wait(); err != nil {

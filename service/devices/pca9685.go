@@ -20,12 +20,14 @@ package devices
 import (
 	"context"
 	"math"
+	"sync"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/bridge"
 )
 
 type pca9685 struct {
+	mutex    sync.Mutex
 	onActive func()
 	config   model.Device
 	bus      bridge.I2CBus
@@ -63,6 +65,9 @@ func newPCA9685(config model.Device, bus bridge.I2CBus, onActive func()) (PWM, e
 
 // Configure is called once to put the device in the desired state.
 func (d *pca9685) Configure(ctx context.Context) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	freq := 60.0
 	freq *= 0.9 // Correct for overshoot in the frequency setting (see issue #11).
 	prescaleval := 25000000.0
@@ -90,6 +95,9 @@ func (d *pca9685) Configure(ctx context.Context) error {
 
 // Close brings the device back to a safe state.
 func (d *pca9685) Close() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	// Set MODE1: SLEEP=1, ALLCALL=1
 	mode1 := uint8(0x11)
 	d.onActive()
@@ -111,6 +119,9 @@ func (d *pca9685) MaxValue() int {
 
 // Set the output at given index (1...) to the given value
 func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, offValue int) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	regBase, err := d.regBase(output)
 	if err != nil {
 		return err
@@ -133,6 +144,9 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 
 // Set the output at given index (1...)
 func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (int, int, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	regBase, err := d.regBase(output)
 	if err != nil {
 		return 0, 0, err

@@ -106,17 +106,14 @@ func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
 	configuredDevices := make(map[model.DeviceID]Device)
 	for id, d := range s.devices {
-		log.Debug().
-			Str("id", string(id)).
-			Msg("Configuring device")
+		log := log.With().Str("id", string(id)).Logger()
+		log.Debug().Msg("configuring device...")
 		if err := d.Configure(ctx); err != nil {
-			log.Warn().
-				Err(err).
-				Str("id", string(id)).
-				Msg("Failed to configure device")
+			log.Warn().Err(err).Msg("Failed to configure device")
 			ae.Add(err)
 		} else {
 			configuredDevices[id] = d
+			log.Debug().Msg("configured device")
 		}
 	}
 	s.configuredDevices = configuredDevices

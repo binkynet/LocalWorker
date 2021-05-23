@@ -16,23 +16,20 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	discovery "github.com/binkynet/BinkyNet/discovery"
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/service/bridge"
 	grpcutil "github.com/binkynet/LocalWorker/service/util"
-	"github.com/binkynet/LocalWorker/service/worker"
 )
 
 type Service interface {
@@ -57,6 +54,8 @@ type service struct {
 	hostID       string
 	workerCancel func()
 	shutdown     bool
+	lastWorkerID uint32
+	workerSem    *semaphore.Weighted
 
 	lwConfigListener  *discovery.ServiceListener
 	lwControlListener *discovery.ServiceListener
@@ -78,6 +77,7 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 		hostID:           hostID,
 		lwConfigChanges:  make(chan api.ServiceInfo),
 		lwControlChanges: make(chan api.ServiceInfo),
+		workerSem:        semaphore.NewWeighted(1),
 	}
 	s.lwConfigListener = discovery.NewServiceListener(deps.Log, api.ServiceTypeLocalWorkerConfig, true, s.lwConfigChanged)
 	s.lwControlListener = discovery.NewServiceListener(deps.Log, api.ServiceTypeLocalWorkerControl, true, s.lwControlChanged)
@@ -222,144 +222,14 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 	defer close(stopWorker)
 	g, ctx := errgroup.WithContext(ctx)
 
-	loadConfigStream := func(log zerolog.Logger) error {
-		confStream, err := lwConfigClient.GetConfig(ctx, &api.LocalWorkerInfo{
-			Id:          s.hostID,
-			Description: "Local worker",
-			Version:     s.ProgramVersion,
-			Uptime:      0, // TODO
-		}, grpc_retry.WithMax(3))
-		if err != nil {
-			log.Debug().Err(err).Msg("GetConfig failed.")
-			return err
-		}
-		defer confStream.CloseSend()
-		for {
-			// Read configuration
-			conf, err := confStream.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				return nil
-			} else if err != nil {
-				log.Error().Err(err).Msg("Failed to read configuration")
-				return nil
-			}
-			log.Debug().Msg("Received new configuration")
-			select {
-			case configChanged <- conf:
-				// Continue
-			case <-ctx.Done():
-				// Context canceled
-				return nil
-			}
-		}
-	}
-
-	// Request configuration in stream
+	// Keep requesting configuration in stream
 	g.Go(func() error {
-		log := log.With().Str("component", "config-reader").Logger()
-		recentErrors := 0
-		for {
-			delay := time.Second * 5
-			if err := loadConfigStream(log); err != nil {
-				log.Warn().Err(err).Msg("loadConfigStream failed")
-				recentErrors++
-				delay = time.Second
-			} else {
-				recentErrors = 0
-			}
-			if recentErrors > 10 {
-				// Too many recent errors, stop the worker
-				log.Debug().Msg("Stopping worker because of too many recent errors")
-				stopWorker <- struct{}{}
-				return nil
-			}
-			select {
-			case <-ctx.Done():
-				// Context canceled
-				return nil
-			case <-time.After(delay):
-				// Retry
-			}
-		}
+		return s.runLoadConfig(ctx, lwConfigClient, lwControlClient, configChanged, stopWorker)
 	})
 
-	// Keep running worker
+	// Keep running a worker
 	g.Go(func() error {
-		log := log.With().Str("component", "worker-runner").Logger()
-		var conf *api.LocalWorkerConfig
-		lctx, cancel := context.WithCancel(ctx)
-		for {
-			select {
-			case c := <-configChanged:
-				// Start/restart worker
-				if c != nil {
-					conf = c
-					log.Debug().Msg("Configuration changed")
-					cancel()
-				} else {
-					log.Warn().Msg("Received nil configuration")
-					continue
-				}
-			case <-stopWorker:
-				log.Info().Msg("Stop worker")
-				conf = nil
-				cancel()
-			case <-ctx.Done():
-				// Context canceled
-				cancel()
-				return nil
-			case <-lctx.Done():
-				// Worker finished
-			}
-
-			// Prepare new worker
-			lctx, cancel = context.WithCancel(ctx)
-			if conf != nil {
-				moduleID := s.hostID
-				if alias := conf.GetAlias(); alias != "" {
-					moduleID = alias
-				}
-				log = log.With().Str("module-id", moduleID).Logger()
-				go func(ctx context.Context, conf *api.LocalWorkerConfig) {
-					defer func() {
-						if err := recover(); err != nil {
-							fmt.Println(err)
-						}
-					}()
-					for {
-						log.Debug().Msg("Creating new worker service")
-						w, err := worker.NewService(worker.Config{
-							LocalWorkerConfig: *conf,
-							ProgramVersion:    s.ProgramVersion,
-							HardwareID:        s.hostID,
-							ModuleID:          moduleID,
-						}, worker.Dependencies{
-							Log:    s.Log.With().Str("component", "worker").Logger(),
-							Bridge: s.Bridge,
-						})
-						if err != nil {
-							log.Error().Err(err).Msg("Failed to create worker")
-							// Wait a bit and then retry
-						} else {
-							// Run worker
-							log.Debug().Msg("worker.Run...")
-							if err := w.Run(ctx, lwControlClient); err != nil && err != context.Canceled {
-								log.Error().Err(err).Msg("Failed to run worker")
-							} else {
-								log.Info().Err(err).Msg("Worker ended")
-							}
-						}
-						select {
-						case <-ctx.Done():
-							// Context canceled
-							return
-						case <-time.After(time.Second):
-							// Retry
-						}
-					}
-				}(lctx, conf)
-			}
-		}
+		return s.runWorker(ctx, lwConfigClient, lwControlClient, configChanged, stopWorker)
 	})
 
 	return g.Wait()

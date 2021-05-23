@@ -68,7 +68,7 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 		var err error
 		id := c.Id
 		address := model.JoinModuleLocal(moduleID, string(id))
-		log = log.With().
+		log := log.With().
 			Str("address", string(address)).
 			Str("type", string(c.Type)).
 			Logger()
@@ -92,7 +92,7 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 			s.objects[address] = obj
 		}
 	}
-	s.log.Debug().Msgf("created %d objects", len(s.objects))
+	log.Debug().Msgf("created %d objects", len(s.objects))
 	return s, nil
 }
 
@@ -107,14 +107,17 @@ func (s *service) ObjectByAddress(address model.ObjectAddress) (Object, bool) {
 func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
 	configuredObjects := make(map[model.ObjectAddress]Object)
-	for addr, d := range s.objects {
+	log := s.log
+	for addr, obj := range s.objects {
+		log := log.With().Str("address", string(addr)).Logger()
+		log.Debug().Msg("configuring object ...")
 		time.Sleep(time.Millisecond * 200)
-		if err := d.Configure(ctx); err != nil {
-			s.log.Error().Err(err).Str("address", string(addr)).Msg("Failed to configure object")
+		if err := obj.Configure(ctx); err != nil {
+			log.Error().Err(err).Msg("Failed to configure object")
 			ae.Add(err)
 		} else {
-			s.log.Debug().Str("address", string(addr)).Msg("configured object")
-			configuredObjects[addr] = d
+			configuredObjects[addr] = obj
+			log.Debug().Msg("configured object")
 		}
 	}
 	s.configuredObjects = configuredObjects
@@ -176,7 +179,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 				}
 			}
 		}
-		if err := g.Wait(); err != nil && err != context.Canceled {
+		if err := g.Wait(); err != nil && ctx.Err() == nil {
 			s.log.Warn().Err(err).Msg("Run Objects failed")
 			return err
 		}

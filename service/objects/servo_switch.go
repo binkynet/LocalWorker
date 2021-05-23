@@ -262,8 +262,8 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 // ProcessMessage acts upons a given request.
 func (o *servoSwitch) ProcessMessage(ctx context.Context, r model.Switch) error {
 	direction := r.GetRequest().GetDirection()
-	log := o.log.With().Str("direction", string(direction)).Logger()
-	log.Debug().Msg("got request")
+	log := o.log.With().Str("direction", direction.String()).Logger()
+	log.Debug().Msg("got servo-switch request")
 
 	switch direction {
 	case model.SwitchDirection_STRAIGHT:

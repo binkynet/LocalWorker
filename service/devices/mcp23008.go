@@ -19,6 +19,7 @@ package devices
 
 import (
 	"context"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -27,6 +28,7 @@ import (
 )
 
 type mcp23008 struct {
+	mutex    sync.Mutex
 	onActive func()
 	config   model.Device
 	bus      bridge.I2CBus
@@ -71,6 +73,9 @@ func newMcp23008(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO,
 
 // Configure is called once to put the device in the desired state.
 func (d *mcp23008) Configure(ctx context.Context) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	d.iodir = 0xff
 	d.onActive()
 	if err := d.bus.WriteByteReg(d.address, mcp23008RegIOCON, 0x20); err != nil {
@@ -84,6 +89,9 @@ func (d *mcp23008) Configure(ctx context.Context) error {
 
 // Close brings the device back to a safe state.
 func (d *mcp23008) Close() error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	// Restore all to input
 	d.iodir = 0xff
 	d.onActive()
@@ -100,6 +108,9 @@ func (d *mcp23008) PinCount() uint {
 
 // Set the direction of the pin at given index (1...)
 func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, direction PinDirection) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	mask, err := d.bitMask(pin)
 	if err != nil {
 		return err
@@ -118,6 +129,9 @@ func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 
 // Get the direction of the pin at given index (1...)
 func (d *mcp23008) GetDirection(ctx context.Context, pin model.DeviceIndex) (PinDirection, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	mask, err := d.bitMask(pin)
 	if err != nil {
 		return PinDirectionInput, err
@@ -134,6 +148,9 @@ func (d *mcp23008) GetDirection(ctx context.Context, pin model.DeviceIndex) (Pin
 
 // Set the pin at given index (1...) to the given value
 func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	mask, err := d.bitMask(pin)
 	if err != nil {
 		return err
@@ -156,6 +173,9 @@ func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 
 // Set the pin at given index (1...)
 func (d *mcp23008) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
 	mask, err := d.bitMask(pin)
 	if err != nil {
 		return false, err
