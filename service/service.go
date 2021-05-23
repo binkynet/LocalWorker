@@ -59,6 +59,7 @@ type service struct {
 	lastWorkerID      uint32
 	environmentSem    *semaphore.Weighted
 	workerSem         *semaphore.Weighted
+	startedAt         time.Time
 
 	lwConfigListener  *discovery.ServiceListener
 	lwControlListener *discovery.ServiceListener
@@ -82,6 +83,7 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 		lwControlChanges: make(chan api.ServiceInfo),
 		environmentSem:   semaphore.NewWeighted(1),
 		workerSem:        semaphore.NewWeighted(1),
+		startedAt:        time.Now(),
 	}
 	s.lwConfigListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerConfig, true, s.lwConfigChanged)
 	s.lwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerControl, true, s.lwControlChanged)

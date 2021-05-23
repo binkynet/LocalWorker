@@ -37,11 +37,12 @@ func (s *service) runLoadConfig(ctx context.Context,
 	log = log.With().Str("component", "config-reader").Logger()
 
 	loadConfigStream := func(log zerolog.Logger) error {
+		uptime := int64(time.Since(s.startedAt).Seconds())
 		confStream, err := lwConfigClient.GetConfig(ctx, &api.LocalWorkerInfo{
 			Id:          s.hostID,
 			Description: "Local worker",
 			Version:     s.ProgramVersion,
-			Uptime:      0, // TODO
+			Uptime:      uptime,
 		}, grpc_retry.WithMax(3))
 		if err != nil {
 			log.Debug().Err(err).Msg("GetConfig failed.")
