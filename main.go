@@ -95,7 +95,7 @@ func main() {
 	svc, err := service.NewService(service.Config{
 		ProgramVersion: version,
 	}, service.Dependencies{
-		Log:    logger,
+		Logger: logger,
 		Bridge: br,
 	})
 	if err != nil {

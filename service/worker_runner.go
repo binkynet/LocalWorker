@@ -28,13 +28,14 @@ import (
 
 // runWorker keeps creating and running workers until the given context is cancelled.
 func (s *service) runWorker(ctx context.Context,
+	log zerolog.Logger,
 	lwConfigClient api.LocalWorkerConfigServiceClient,
 	lwControlClient api.LocalWorkerControlServiceClient,
 	configChanged <-chan *api.LocalWorkerConfig,
 	stopWorker <-chan struct{}) error {
 
 	// Keep running a worker
-	log := s.Log.With().Str("component", "worker-runner").Logger()
+	log = log.With().Str("component", "worker-runner").Logger()
 	var conf *api.LocalWorkerConfig
 	lctx, cancel := context.WithCancel(ctx)
 	for {
@@ -82,6 +83,13 @@ func (s *service) runWorker(ctx context.Context,
 				// Release semaphore when worker is done.
 				defer s.workerSem.Release(1)
 
+				// Check context cancelation
+				if err := ctx.Err(); err != nil {
+					log.Warn().Err(err).Msg("Worker context canceled before we started")
+					return
+				}
+
+				// Run the worker
 				s.runWorkerWithConfig(ctx, log, lwConfigClient, lwControlClient, conf, moduleID)
 			}(lctx, log, *conf)
 		}

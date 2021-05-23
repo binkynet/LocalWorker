@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
@@ -42,7 +43,7 @@ type Config struct {
 }
 
 type Dependencies struct {
-	Log    zerolog.Logger
+	Logger zerolog.Logger
 	Bridge bridge.API
 }
 
@@ -50,12 +51,14 @@ type service struct {
 	Config
 	Dependencies
 
-	mutex        sync.Mutex
-	hostID       string
-	workerCancel func()
-	shutdown     bool
-	lastWorkerID uint32
-	workerSem    *semaphore.Weighted
+	mutex             sync.Mutex
+	hostID            string
+	workerCancel      func()
+	shutdown          bool
+	lastEnvironmentID uint32
+	lastWorkerID      uint32
+	environmentSem    *semaphore.Weighted
+	workerSem         *semaphore.Weighted
 
 	lwConfigListener  *discovery.ServiceListener
 	lwControlListener *discovery.ServiceListener
@@ -65,7 +68,7 @@ type service struct {
 
 // NewService creates a Service instance and returns it.
 func NewService(conf Config, deps Dependencies) (Service, error) {
-	deps.Log = deps.Log.With().Str("component", "service").Logger()
+	deps.Logger = deps.Logger.With().Str("component", "service").Logger()
 	// Create host ID
 	hostID, err := createHostID()
 	if err != nil {
@@ -77,10 +80,11 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 		hostID:           hostID,
 		lwConfigChanges:  make(chan api.ServiceInfo),
 		lwControlChanges: make(chan api.ServiceInfo),
+		environmentSem:   semaphore.NewWeighted(1),
 		workerSem:        semaphore.NewWeighted(1),
 	}
-	s.lwConfigListener = discovery.NewServiceListener(deps.Log, api.ServiceTypeLocalWorkerConfig, true, s.lwConfigChanged)
-	s.lwControlListener = discovery.NewServiceListener(deps.Log, api.ServiceTypeLocalWorkerControl, true, s.lwControlChanged)
+	s.lwConfigListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerConfig, true, s.lwConfigChanged)
+	s.lwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerControl, true, s.lwControlChanged)
 	return s, nil
 }
 
@@ -88,7 +92,7 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 // to register the worker, followed by running the worker loop
 // in a given environment.
 func (s *service) Run(ctx context.Context) error {
-	log := s.Log.With().Str("id", s.hostID).Logger()
+	log := s.Logger.With().Str("id", s.hostID).Logger()
 	defer s.Bridge.Close()
 
 	// Create host ID
@@ -155,7 +159,7 @@ func (s *service) Run(ctx context.Context) error {
 			s.mutex.Lock()
 			s.workerCancel = workerCancel
 			s.mutex.Unlock()
-			err = s.runWorkerInEnvironment(workerCtx, lwConfigClient, lwControlClient)
+			err = s.runWorkerInEnvironment(workerCtx, log, lwConfigClient, lwControlClient)
 			workerCancel()
 			if err != nil {
 				log.Debug().Err(err).Msg("runWorkerInEnvironment failed")
@@ -179,7 +183,7 @@ func (s *service) lwConfigChanged(info api.ServiceInfo) {
 	cancel := s.workerCancel
 	s.mutex.Unlock()
 	if cancel != nil {
-		s.Log.Debug().Msg("lwConfigChanged: canceling worker")
+		s.Logger.Debug().Msg("lwConfigChanged: canceling worker")
 		cancel()
 	}
 	s.lwConfigChanges <- info
@@ -191,17 +195,36 @@ func (s *service) lwControlChanged(info api.ServiceInfo) {
 	cancel := s.workerCancel
 	s.mutex.Unlock()
 	if cancel != nil {
-		s.Log.Debug().Msg("lwControlChanged: canceling worker")
+		s.Logger.Debug().Msg("lwControlChanged: canceling worker")
 		cancel()
 	}
 	s.lwControlChanges <- info
 }
 
 // Run the worker until the given context is cancelled.
-func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api.LocalWorkerConfigServiceClient,
+func (s *service) runWorkerInEnvironment(ctx context.Context,
+	log zerolog.Logger,
+	lwConfigClient api.LocalWorkerConfigServiceClient,
 	lwControlClient api.LocalWorkerControlServiceClient) error {
+
+	// Prepare logger
+	environmentID := atomic.AddUint32(&s.lastEnvironmentID, 1)
+	log = log.With().Uint32("environment-id", environmentID).Logger()
+
+	// Acquire environment semaphore
+	if err := s.environmentSem.Acquire(ctx, 1); err != nil {
+		log.Warn().Err(err).Msg("Failed to acquire environment semaphore")
+		return err
+	}
+	defer s.environmentSem.Release(1)
+
+	// Check context cancelation
+	if err := ctx.Err(); err != nil {
+		log.Warn().Err(err).Msg("Environment context canceled before we started")
+		return err
+	}
+
 	// Initialization done, run loop
-	log := s.Log
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
 
@@ -209,7 +232,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 		s.Bridge.SetGreenLED(false)
 		s.Bridge.SetRedLED(true)
 		if s.shutdown {
-			if err := environment.Reboot(s.Log); err != nil {
+			if err := environment.Reboot(log); err != nil {
 				log.Error().Err(err).Msg("Reboot failed")
 			}
 			os.Exit(1)
@@ -224,12 +247,12 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 
 	// Keep requesting configuration in stream
 	g.Go(func() error {
-		return s.runLoadConfig(ctx, lwConfigClient, lwControlClient, configChanged, stopWorker)
+		return s.runLoadConfig(ctx, log, lwConfigClient, lwControlClient, configChanged, stopWorker)
 	})
 
 	// Keep running a worker
 	g.Go(func() error {
-		return s.runWorker(ctx, lwConfigClient, lwControlClient, configChanged, stopWorker)
+		return s.runWorker(ctx, log, lwConfigClient, lwControlClient, configChanged, stopWorker)
 	})
 
 	return g.Wait()

@@ -27,13 +27,14 @@ import (
 // runLoadConfig keeps requesting the worker configuration and puts
 // config changes in configChanged channel.
 func (s *service) runLoadConfig(ctx context.Context,
+	log zerolog.Logger,
 	lwConfigClient api.LocalWorkerConfigServiceClient,
 	lwControlClient api.LocalWorkerControlServiceClient,
 	configChanged chan *api.LocalWorkerConfig,
 	stopWorker chan struct{}) error {
 
 	// Prepare log
-	log := s.Log.With().Str("component", "config-reader").Logger()
+	log = log.With().Str("component", "config-reader").Logger()
 
 	loadConfigStream := func(log zerolog.Logger) error {
 		confStream, err := lwConfigClient.GetConfig(ctx, &api.LocalWorkerInfo{
