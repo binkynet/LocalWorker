@@ -176,7 +176,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 				}
 			}
 		}
-		if err := g.Wait(); err != nil {
+		if err := g.Wait(); err != nil && err != context.Canceled {
 			s.log.Warn().Err(err).Msg("Run Objects failed")
 			return err
 		}
@@ -201,7 +201,7 @@ func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.Lo
 		// Send ping
 		msg.Uptime = int64(time.Since(s.startTime).Seconds())
 		delay := time.Second * 15
-		if _, err := lwControlClient.Ping(ctx, msg); err != nil {
+		if _, err := lwControlClient.Ping(ctx, msg); err != nil && ctx.Err() == nil {
 			log.Info().Err(err).Msg("Failed to send ping message")
 			delay = time.Second * 5
 		}

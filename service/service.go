@@ -344,7 +344,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context, lwConfigClient api
 						} else {
 							// Run worker
 							log.Debug().Msg("worker.Run...")
-							if err := w.Run(ctx, lwControlClient); err != nil {
+							if err := w.Run(ctx, lwControlClient); err != nil && err != context.Canceled {
 								log.Error().Err(err).Msg("Failed to run worker")
 							} else {
 								log.Info().Err(err).Msg("Worker ended")
