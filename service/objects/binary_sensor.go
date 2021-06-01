@@ -41,6 +41,7 @@ type binarySensor struct {
 	inputDevice devices.GPIO
 	pin         model.DeviceIndex
 	sendNow     int32
+	lastPower   bool
 }
 
 // newBinarySensor creates a new binary-sensor object for the given configuration.
@@ -112,7 +113,10 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
 			if force || lastValue != value || changes == 0 {
 				// Send feedback data
-				log = log.With().Bool("value", value).Logger()
+				log = log.With().
+					Bool("value", value).
+					Bool("last_value", lastValue).
+					Logger()
 				log.Debug().Bool("force", force).Msg("change detected")
 				actual := model.Sensor{
 					Address: o.address,
@@ -120,6 +124,7 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 						Value: boolToInt32(value),
 					},
 				}
+				lastValue = value
 				statuses.PublishSensorActual(actual)
 				changes++
 			}
@@ -138,8 +143,12 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 
 // ProcessPowerMessage acts upons a given power message.
 func (o *binarySensor) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
-	if m.GetEnabled() {
-		atomic.StoreInt32(&o.sendNow, 1)
+	enabled := m.GetEnabled()
+	if o.lastPower != enabled {
+		o.lastPower = enabled
+		if m.GetEnabled() {
+			atomic.StoreInt32(&o.sendNow, 1)
+		}
 	}
 	return nil
 }
