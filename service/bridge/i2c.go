@@ -37,6 +37,7 @@ const (
 
 	// From  /usr/include/linux/i2c.h:
 	// Adapter functionality
+	I2C_FUNC_SMBUS_QUICK            = 0x00010000
 	I2C_FUNC_SMBUS_READ_BYTE        = 0x00020000
 	I2C_FUNC_SMBUS_WRITE_BYTE       = 0x00040000
 	I2C_FUNC_SMBUS_READ_BYTE_DATA   = 0x00080000
@@ -46,6 +47,7 @@ const (
 	I2C_FUNC_SMBUS_READ_BLOCK_DATA  = 0x01000000
 	I2C_FUNC_SMBUS_WRITE_BLOCK_DATA = 0x02000000
 	// Transaction types
+	I2C_SMBUS_QUICK            = 0
 	I2C_SMBUS_BYTE             = 1
 	I2C_SMBUS_BYTE_DATA        = 2
 	I2C_SMBUS_WORD_DATA        = 3
@@ -129,6 +131,20 @@ func (d *i2cBus) Close() (err error) {
 	return d.file.Close()
 }
 
+func (d *i2cBus) DetectAddress(addr byte) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if err := d.setAddress(int(addr)); err != nil {
+		return maskAny(err)
+	}
+	err := d.quick()
+	if err != nil {
+		return maskAny(err)
+	}
+	return nil
+}
+
 func (d *i2cBus) ReadByteReg(addr byte, reg uint8) (uint8, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
@@ -154,6 +170,15 @@ func (d *i2cBus) WriteByteReg(addr byte, reg uint8, val uint8) (err error) {
 		return maskAny(err)
 	}
 	return nil
+}
+
+func (d *i2cBus) quick() (err error) {
+	if d.funcs&I2C_FUNC_SMBUS_QUICK == 0 {
+		return fmt.Errorf("SMBus quick not supported")
+	}
+
+	err = d.smbusAccess(I2C_SMBUS_WRITE, 0, I2C_SMBUS_QUICK, uintptr(0))
+	return err
 }
 
 func (d *i2cBus) readByte() (val byte, err error) {
@@ -272,8 +297,8 @@ func (d *i2cBus) smbusAccess(readWrite byte, command byte, size uint32, data uin
 // DetectSlaveAddresses probes the bus to detect available addresses.
 func (d *i2cBus) DetectSlaveAddresses() []byte {
 	var result []byte
-	for addr := 1; addr < 256; addr++ {
-		if _, err := d.ReadByteReg(byte(addr), 0); err == nil {
+	for addr := 1; addr < 128; addr++ {
+		if err := d.DetectAddress(byte(addr)); err == nil {
 			result = append(result, byte(addr))
 		}
 	}

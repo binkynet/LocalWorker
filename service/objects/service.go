@@ -82,6 +82,8 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 			obj, err = newRelaySwitch(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeServoSwitch:
 			obj, err = newServoSwitch(moduleID, id, address, *c, log, devService)
+		case model.ObjectTypeTrackInverter:
+			obj, err = newTrackInverter(moduleID, id, address, *c, log, devService)
 		default:
 			err = model.InvalidArgument("Unsupported object type '%s'", c.Type)
 		}
