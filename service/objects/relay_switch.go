@@ -50,6 +50,7 @@ type relaySwitchDirection struct {
 	device devices.GPIO
 	pin    model.DeviceIndex
 	invert bool
+	pulse  time.Duration
 }
 
 func (rsd relaySwitchDirection) activateRelay(ctx context.Context) error {
@@ -87,6 +88,7 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 		return nil, model.InvalidArgument("%s: (pin %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
 	}
 	straightInvert := straightConn.GetBoolConfig(model.ConfigKeyInvert)
+	straightPulse := straightConn.GetIntConfig(model.ConfigKeyPulse)
 	offConn, offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
 	if err != nil {
 		return nil, err
@@ -96,13 +98,14 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 		return nil, model.InvalidArgument("%s: (pin %s in object %s)", err.Error(), model.ConnectionNameOffRelay, oid)
 	}
 	offInvert := offConn.GetBoolConfig(model.ConfigKeyInvert)
+	offPulse := offConn.GetIntConfig(model.ConfigKeyPulse)
 	return &relaySwitch{
 		log:      log,
 		config:   config,
 		address:  address,
 		sender:   sender,
-		straight: relaySwitchDirection{straightDev, straightPin.Index, straightInvert},
-		off:      relaySwitchDirection{offDev, offPin.Index, offInvert},
+		straight: relaySwitchDirection{straightDev, straightPin.Index, straightInvert, time.Duration(straightPulse) * time.Millisecond},
+		off:      relaySwitchDirection{offDev, offPin.Index, offInvert, time.Duration(offPulse) * time.Millisecond},
 	}, nil
 }
 
@@ -200,6 +203,7 @@ func (o *relaySwitch) ProcessMessage(ctx context.Context, r model.Switch) error 
 // The mutex must be held when calling this function.
 func (o *relaySwitch) switchTo(ctx context.Context, direction model.SwitchDirection) error {
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
+	var pulse time.Duration
 	switch direction {
 	case model.SwitchDirection_STRAIGHT:
 		if err := o.off.deactivateRelay(ctx); err != nil {
@@ -208,6 +212,7 @@ func (o *relaySwitch) switchTo(ctx context.Context, direction model.SwitchDirect
 		if err := o.straight.activateRelay(ctx); err != nil {
 			return err
 		}
+		pulse = o.straight.pulse
 	case model.SwitchDirection_OFF:
 		if err := o.straight.deactivateRelay(ctx); err != nil {
 			return err
@@ -215,9 +220,10 @@ func (o *relaySwitch) switchTo(ctx context.Context, direction model.SwitchDirect
 		if err := o.off.activateRelay(ctx); err != nil {
 			return err
 		}
+		pulse = o.off.pulse
 	}
 	o.disableAllNeeded = true
-	o.disableAllTime = time.Now().Add(time.Second)
+	o.disableAllTime = time.Now().Add(pulse)
 	o.requestedDirection = direction
 
 	return nil
