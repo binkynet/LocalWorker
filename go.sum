@@ -1,7 +1,7 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/binkynet/BinkyNet v0.9.2 h1:7hLLS/eTXTpjJ0Lohw18GM0MS3rObka6LQAzSZCOqVM=
-github.com/binkynet/BinkyNet v0.9.2/go.mod h1:6QAEMwQLhGZ2FUOZYp8qLcnX/Ec3Gj91T5pdBkehkDs=
+github.com/binkynet/BinkyNet v0.9.3 h1:LlF5NU0yA9Gys3dG98jrFJ3f3FraJ7CQroS/qGoh7Us=
+github.com/binkynet/BinkyNet v0.9.3/go.mod h1:6QAEMwQLhGZ2FUOZYp8qLcnX/Ec3Gj91T5pdBkehkDs=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

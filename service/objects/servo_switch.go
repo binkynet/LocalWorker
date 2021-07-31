@@ -57,6 +57,7 @@ type phaseRelay struct {
 	device     devices.GPIO
 	pin        model.DeviceIndex
 	lastActive bool
+	invert     bool
 }
 
 func (r *phaseRelay) configure(ctx context.Context) error {
@@ -72,7 +73,7 @@ func (r *phaseRelay) configure(ctx context.Context) error {
 
 func (r *phaseRelay) activateRelay(ctx context.Context) error {
 	if !r.lastActive {
-		if err := r.device.Set(ctx, r.pin, true); err != nil {
+		if err := r.device.Set(ctx, r.pin, r.pinValue(true)); err != nil {
 			return err
 		}
 		r.lastActive = true
@@ -82,12 +83,19 @@ func (r *phaseRelay) activateRelay(ctx context.Context) error {
 
 func (r *phaseRelay) deactivateRelay(ctx context.Context) error {
 	if r.lastActive {
-		if err := r.device.Set(ctx, r.pin, false); err != nil {
+		if err := r.device.Set(ctx, r.pin, r.pinValue(false)); err != nil {
 			return err
 		}
 		r.lastActive = false
 	}
 	return nil
+}
+
+func (r *phaseRelay) pinValue(value bool) bool {
+	if r.invert {
+		return !value
+	}
+	return value
 }
 
 // newServoSwitch creates a new servo-switch object for the given configuration.
@@ -122,7 +130,7 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 
 	// Phase relay for straight direction
 	if _, found := config.ConnectionByName(model.ConnectionNamePhaseStraightRelay); found {
-		_, phaseStraightPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseStraightRelay)
+		conn, phaseStraightPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseStraightRelay)
 		if err != nil {
 			return nil, err
 		}
@@ -130,12 +138,13 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 		if err != nil {
 			return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNamePhaseStraightRelay, oid)
 		}
-		sw.servo.phaseStraight = &phaseRelay{phaseStraightDev, phaseStraightPin.Index, true}
+		invert := conn.GetBoolConfig(model.ConfigKeyInvert)
+		sw.servo.phaseStraight = &phaseRelay{phaseStraightDev, phaseStraightPin.Index, true, invert}
 	}
 
 	// Phase relay for off direction
 	if _, found := config.ConnectionByName(model.ConnectionNamePhaseOffRelay); found {
-		_, phaseOffPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseOffRelay)
+		conn, phaseOffPin, err := getSinglePin(oid, config, model.ConnectionNamePhaseOffRelay)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +152,8 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 		if err != nil {
 			return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNamePhaseOffRelay, oid)
 		}
-		sw.servo.phaseOff = &phaseRelay{phaseOffDev, phaseOffPin.Index, true}
+		invert := conn.GetBoolConfig(model.ConfigKeyInvert)
+		sw.servo.phaseOff = &phaseRelay{phaseOffDev, phaseOffPin.Index, true, invert}
 	}
 
 	return sw, nil

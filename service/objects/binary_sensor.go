@@ -40,6 +40,7 @@ type binarySensor struct {
 	sender      string
 	inputDevice devices.GPIO
 	pin         model.DeviceIndex
+	invert      bool
 	sendNow     int32
 	lastPower   bool
 }
@@ -68,6 +69,7 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 	if pin < 1 || uint(pin) > gpio.PinCount() {
 		return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, gpio.PinCount())
 	}
+	invert := conn.GetBoolConfig(model.ConfigKeyInvert)
 	return &binarySensor{
 		log:         log,
 		config:      config,
@@ -75,6 +77,7 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 		sender:      sender,
 		inputDevice: gpio,
 		pin:         pin,
+		invert:      invert,
 	}, nil
 }
 
@@ -109,6 +112,9 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 			}
 			recentErrors++
 		} else {
+			if o.invert {
+				value = !value
+			}
 			recentErrors = 0
 			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
 			if force || lastValue != value || changes == 0 {

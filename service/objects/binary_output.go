@@ -59,6 +59,7 @@ type binaryOutput struct {
 	sender       string
 	outputDevice devices.GPIO
 	pin          model.DeviceIndex
+	invert       bool
 }
 
 // newBinaryOutput creates a new binary-output object for the given configuration.
@@ -85,6 +86,7 @@ func newBinaryOutput(sender string, oid model.ObjectID, address model.ObjectAddr
 	if pin < 1 || uint(pin) > gpio.PinCount() {
 		return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameOutput, oid, pin, gpio.PinCount())
 	}
+	invert := conn.GetBoolConfig(model.ConfigKeyInvert)
 	return &binaryOutput{
 		log:          log,
 		config:       config,
@@ -92,6 +94,7 @@ func newBinaryOutput(sender string, oid model.ObjectID, address model.ObjectAddr
 		sender:       sender,
 		outputDevice: gpio,
 		pin:          pin,
+		invert:       invert,
 	}, nil
 }
 
@@ -121,7 +124,7 @@ func (o *binaryOutput) ProcessMessage(ctx context.Context, r model.Output) error
 	value := r.GetRequest().GetValue()
 	log := o.log.With().Int32("value", value).Logger()
 	log.Debug().Msg("got request")
-	if err := o.outputDevice.Set(ctx, o.pin, int32ToBool(value)); err != nil {
+	if err := o.outputDevice.Set(ctx, o.pin, o.pinValue(int32ToBool(value))); err != nil {
 		log.Debug().Err(err).Msg("GPIO.set failed")
 		return err
 	}
@@ -131,4 +134,11 @@ func (o *binaryOutput) ProcessMessage(ctx context.Context, r model.Output) error
 // ProcessPowerMessage acts upons a given power message.
 func (o *binaryOutput) ProcessPowerMessage(ctx context.Context, m model.PowerState) error {
 	return nil // TODO
+}
+
+func (o *binaryOutput) pinValue(value bool) bool {
+	if o.invert {
+		return !value
+	}
+	return value
 }

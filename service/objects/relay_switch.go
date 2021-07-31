@@ -49,20 +49,28 @@ type relaySwitch struct {
 type relaySwitchDirection struct {
 	device devices.GPIO
 	pin    model.DeviceIndex
+	invert bool
 }
 
 func (rsd relaySwitchDirection) activateRelay(ctx context.Context) error {
-	if err := rsd.device.Set(ctx, rsd.pin, true); err != nil {
+	if err := rsd.device.Set(ctx, rsd.pin, rsd.pinValue(true)); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (rsd relaySwitchDirection) deactivateRelay(ctx context.Context) error {
-	if err := rsd.device.Set(ctx, rsd.pin, false); err != nil {
+	if err := rsd.device.Set(ctx, rsd.pin, rsd.pinValue(false)); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (rsd relaySwitchDirection) pinValue(value bool) bool {
+	if rsd.invert {
+		return !value
+	}
+	return value
 }
 
 // newRelaySwitch creates a new relay-switch object for the given configuration.
@@ -70,7 +78,7 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	if config.Type != model.ObjectTypeRelaySwitch {
 		return nil, model.InvalidArgument("Invalid object type '%s'", config.Type)
 	}
-	_, straightPin, err := getSinglePin(oid, config, model.ConnectionNameStraightRelay)
+	straightConn, straightPin, err := getSinglePin(oid, config, model.ConnectionNameStraightRelay)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +86,8 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	if err != nil {
 		return nil, model.InvalidArgument("%s: (pin %s in object %s)", err.Error(), model.ConnectionNameStraightRelay, oid)
 	}
-	_, offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
+	straightInvert := straightConn.GetBoolConfig(model.ConfigKeyInvert)
+	offConn, offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
 	if err != nil {
 		return nil, err
 	}
@@ -86,13 +95,14 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	if err != nil {
 		return nil, model.InvalidArgument("%s: (pin %s in object %s)", err.Error(), model.ConnectionNameOffRelay, oid)
 	}
+	offInvert := offConn.GetBoolConfig(model.ConfigKeyInvert)
 	return &relaySwitch{
 		log:      log,
 		config:   config,
 		address:  address,
 		sender:   sender,
-		straight: relaySwitchDirection{straightDev, straightPin.Index},
-		off:      relaySwitchDirection{offDev, offPin.Index},
+		straight: relaySwitchDirection{straightDev, straightPin.Index, straightInvert},
+		off:      relaySwitchDirection{offDev, offPin.Index, offInvert},
 	}, nil
 }
 
