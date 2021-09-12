@@ -141,7 +141,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 
 		g, ctx := errgroup.WithContext(ctx)
 		// Run requests
-		g.Go(func() error { return requests.Run(ctx, lwControlClient) })
+		g.Go(func() error { return requests.Run(ctx, s.moduleID, lwControlClient) })
 		// Run statuses
 		g.Go(func() error { return statuses.Run(ctx, lwControlClient) })
 		// Keep sending ping messages

@@ -48,7 +48,7 @@ func newRequestService(log zerolog.Logger) *requestService {
 }
 
 // Run the service until the given context is canceled
-func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorkerControlServiceClient) error {
+func (s *requestService) Run(ctx context.Context, moduleID string, lwControlClient api.LocalWorkerControlServiceClient) error {
 	log := s.log
 	g, ctx := errgroup.WithContext(ctx)
 	// Receive output requests
@@ -56,6 +56,7 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 		once := func() error {
 			server, err := lwControlClient.GetOutputRequests(ctx, &api.OutputRequestsOptions{
 				ManualConfirm: true,
+				ModuleId:      moduleID,
 			})
 			if err != nil {
 				return err
@@ -77,6 +78,7 @@ func (s *requestService) Run(ctx context.Context, lwControlClient api.LocalWorke
 		once := func() error {
 			server, err := lwControlClient.GetSwitchRequests(ctx, &api.SwitchRequestsOptions{
 				ManualConfirm: true,
+				ModuleId:      moduleID,
 			})
 			if err != nil {
 				return err
