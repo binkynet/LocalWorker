@@ -23,6 +23,8 @@ import (
 	"sync"
 	"syscall"
 	"unsafe"
+
+	"github.com/pkg/errors"
 )
 
 const (
@@ -109,12 +111,12 @@ func (d *i2cBus) queryFunctionality() (err error) {
 	return
 }
 
-func (d *i2cBus) setAddress(address int) (err error) {
+func (d *i2cBus) setAddress(address byte) (err error) {
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
 		d.file.Fd(),
 		I2C_SLAVE,
-		uintptr(byte(address)),
+		uintptr(address),
 	)
 
 	if errno != 0 {
@@ -135,12 +137,12 @@ func (d *i2cBus) DetectAddress(addr byte) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	if err := d.setAddress(int(addr)); err != nil {
-		return maskAny(err)
+	if err := d.setAddress(addr); err != nil {
+		return errors.Wrap(err, "setAddress failed")
 	}
 	err := d.quick()
 	if err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "quick failed")
 	}
 	return nil
 }
@@ -149,12 +151,12 @@ func (d *i2cBus) ReadByteReg(addr byte, reg uint8) (uint8, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	if err := d.setAddress(int(addr)); err != nil {
-		return 0, maskAny(err)
+	if err := d.setAddress(addr); err != nil {
+		return 0, errors.Wrap(err, "setAddress failed")
 	}
 	val, err := d.readByteData(reg)
 	if err != nil {
-		return 0, maskAny(err)
+		return 0, errors.Wrap(err, "readByteData failed")
 	}
 	return val, nil
 }
@@ -163,11 +165,11 @@ func (d *i2cBus) WriteByteReg(addr byte, reg uint8, val uint8) (err error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	if err := d.setAddress(int(addr)); err != nil {
-		return maskAny(err)
+	if err := d.setAddress(addr); err != nil {
+		return errors.Wrap(err, "setAddress failed")
 	}
 	if err := d.writeByteData(reg, val); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "writeByteData failed")
 	}
 	return nil
 }

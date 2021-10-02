@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ecc1/gpio"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -43,7 +44,7 @@ func (l *statusLed) Set(on bool) error {
 		cancel()
 	}
 	if err := l.pin.Write(on); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Write failed")
 	}
 	return nil
 }
@@ -91,11 +92,11 @@ func NewRaspberryPiBridge() (API, error) {
 	initialValue := false
 	greenLed, err := gpio.Output(greenLedPin, activeLow, initialValue)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, errors.Wrap(err, "Output[greenLed] failed")
 	}
 	redLed, err := gpio.Output(redLedPin, activeLow, initialValue)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, errors.Wrap(err, "Output[redLed] failed")
 	}
 	return &piBridge{
 		greenLed: statusLed{pin: greenLed},
@@ -106,7 +107,7 @@ func NewRaspberryPiBridge() (API, error) {
 // Turn Green status led on/off
 func (p *piBridge) SetGreenLED(on bool) error {
 	if err := p.greenLed.Set(on); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Set[greenLed] failed")
 	}
 	return nil
 }
@@ -114,7 +115,7 @@ func (p *piBridge) SetGreenLED(on bool) error {
 // Turn Red status led on/off
 func (p *piBridge) SetRedLED(on bool) error {
 	if err := p.redLed.Set(on); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Set[redLed] failed")
 	}
 	return nil
 }
@@ -122,7 +123,7 @@ func (p *piBridge) SetRedLED(on bool) error {
 // Blink Green status led with given duration between on/off
 func (p *piBridge) BlinkGreenLED(delay time.Duration) error {
 	if err := p.greenLed.Blink(delay); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Blink[greenLed] failed")
 	}
 	return nil
 }
@@ -130,7 +131,7 @@ func (p *piBridge) BlinkGreenLED(delay time.Duration) error {
 // Blink Red status led with given duration between on/off
 func (p *piBridge) BlinkRedLED(delay time.Duration) error {
 	if err := p.redLed.Blink(delay); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Blink[redLed] failed")
 	}
 	return nil
 }
@@ -143,7 +144,7 @@ func (p *piBridge) I2CBus() (I2CBus, error) {
 	if p.bus == nil {
 		bus, err := NewI2cDevice("/dev/i2c-1")
 		if err != nil {
-			return nil, maskAny(err)
+			return nil, errors.Wrap(err, "NewI2cDevice failed")
 		}
 		p.bus = bus
 	}
@@ -158,7 +159,7 @@ func (p *piBridge) Close() error {
 		bus := p.bus
 		p.bus = nil
 		if err := bus.Close(); err != nil {
-			return maskAny(err)
+			return errors.Wrap(err, "Close failed")
 		}
 	}
 	return nil

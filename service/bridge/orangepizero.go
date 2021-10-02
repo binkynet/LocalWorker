@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ecc1/gpio"
+	"github.com/pkg/errors"
 )
 
 type orangepizeroBridge struct {
@@ -40,11 +41,11 @@ func NewOrangePIZeroBridge() (API, error) {
 
 	greenLed, err := gpio.Output(opzGreenLedPin, activeLow, initialValue)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, errors.Wrap(err, "Output[greenLed] failed")
 	}
 	redLed, err := gpio.Output(opzRedLedPin, activeLow, initialValue)
 	if err != nil {
-		return nil, maskAny(err)
+		return nil, errors.Wrap(err, "Output[redLed] failed")
 	}
 
 	return &orangepizeroBridge{
@@ -56,7 +57,7 @@ func NewOrangePIZeroBridge() (API, error) {
 // Turn Green status led on/off
 func (p *orangepizeroBridge) SetGreenLED(on bool) error {
 	if err := p.greenLed.Set(on); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Set[greenLed] failed")
 	}
 	return nil
 }
@@ -64,7 +65,7 @@ func (p *orangepizeroBridge) SetGreenLED(on bool) error {
 // Turn Red status led on/off
 func (p *orangepizeroBridge) SetRedLED(on bool) error {
 	if err := p.redLed.Set(on); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Set[redLed] failed")
 	}
 	return nil
 }
@@ -72,7 +73,7 @@ func (p *orangepizeroBridge) SetRedLED(on bool) error {
 // Blink Green status led with given duration between on/off
 func (p *orangepizeroBridge) BlinkGreenLED(delay time.Duration) error {
 	if err := p.greenLed.Blink(delay); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Blink[greenLed] failed")
 	}
 	return nil
 }
@@ -80,7 +81,7 @@ func (p *orangepizeroBridge) BlinkGreenLED(delay time.Duration) error {
 // Blink Red status led with given duration between on/off
 func (p *orangepizeroBridge) BlinkRedLED(delay time.Duration) error {
 	if err := p.redLed.Blink(delay); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Blink[redLed] failed")
 	}
 	return nil
 }
@@ -93,7 +94,7 @@ func (p *orangepizeroBridge) I2CBus() (I2CBus, error) {
 	if p.bus == nil {
 		bus, err := NewI2cDevice("/dev/i2c-0")
 		if err != nil {
-			return nil, maskAny(err)
+			return nil, errors.Wrap(err, "NewI2cDevice failed")
 		}
 		p.bus = bus
 	}
@@ -108,7 +109,7 @@ func (p *orangepizeroBridge) Close() error {
 		bus := p.bus
 		p.bus = nil
 		if err := bus.Close(); err != nil {
-			return maskAny(err)
+			return errors.Wrap(err, "Close failed")
 		}
 	}
 	return nil
