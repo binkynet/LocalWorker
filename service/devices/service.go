@@ -109,8 +109,9 @@ func (s *service) Configure(ctx context.Context) error {
 		log := log.With().Str("id", string(id)).Logger()
 		log.Debug().Msg("configuring device...")
 		if err := d.Configure(ctx); err != nil {
-			log.Warn().Err(err).Msg("Failed to configure device")
+			log.Error().Err(err).Msg("Failed to configure device")
 			ae.Add(err)
+			log.Debug().Err(err).Msg("Failed to configure device (debug)")
 		} else {
 			configuredDevices[id] = d
 			log.Debug().Msg("configured device")
