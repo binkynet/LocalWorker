@@ -101,7 +101,7 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 	recentErrors := 0
 	log := o.log
 	for {
-		delay := time.Millisecond * 10
+		delay := time.Millisecond * 50
 
 		// Read state
 		value, err := o.inputDevice.Get(ctx, o.pin)
