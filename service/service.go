@@ -94,7 +94,7 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 // to register the worker, followed by running the worker loop
 // in a given environment.
 func (s *service) Run(ctx context.Context) error {
-	log := s.Logger.With().Str("id", s.hostID).Logger()
+	log := s.Logger.With().Str("host-id", s.hostID).Logger()
 	defer s.Bridge.Close()
 
 	// Create host ID

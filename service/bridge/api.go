@@ -38,12 +38,17 @@ type API interface {
 }
 
 func TestI2CBus(bus I2CBus) {
-	for r := byte(0); r <= 0x15; r++ {
-		time.Sleep(time.Millisecond * 50)
-		if v, err := bus.ReadByteReg(0x20, r); err != nil {
-			fmt.Printf("Cannot read register %2x: %#v\n", r, err)
-		} else {
-			fmt.Printf("Reg %2x == %2x\n", r, v)
+	if d, err := bus.OpenDevice(0x20); err != nil {
+		fmt.Printf("Cannot open device: %v\n", err)
+	} else {
+		for r := byte(0); r <= 0x15; r++ {
+			time.Sleep(time.Millisecond * 50)
+			if v, err := d.ReadByteReg(r); err != nil {
+				fmt.Printf("Cannot read register %2x: %#v\n", r, err)
+			} else {
+				fmt.Printf("Reg %2x == %2x\n", r, v)
+			}
 		}
+		d.Close()
 	}
 }

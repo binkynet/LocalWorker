@@ -92,9 +92,9 @@ func (p *orangepizeroBridge) I2CBus() (I2CBus, error) {
 	defer p.mutex.Unlock()
 
 	if p.bus == nil {
-		bus, err := NewI2cDevice("/dev/i2c-0")
+		bus, err := NewI2CBus("/dev/i2c-0")
 		if err != nil {
-			return nil, errors.Wrap(err, "NewI2cDevice failed")
+			return nil, errors.Wrap(err, "NewI2CBus failed")
 		}
 		p.bus = bus
 	}

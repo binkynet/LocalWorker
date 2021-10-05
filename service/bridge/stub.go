@@ -25,15 +25,19 @@ import (
 type stubI2CBus struct {
 }
 
+func (s *stubI2CBus) OpenDevice(address uint8) (I2CDevice, error) {
+	return s, nil
+}
+
 func (s *stubI2CBus) Close() (err error) {
 	return nil
 }
 
-func (s *stubI2CBus) ReadByteReg(addr byte, reg uint8) (uint8, error) {
+func (s *stubI2CBus) ReadByteReg(reg uint8) (uint8, error) {
 	return 0, nil
 }
 
-func (s *stubI2CBus) WriteByteReg(addr byte, reg uint8, val uint8) (err error) {
+func (s *stubI2CBus) WriteByteReg(reg uint8, val uint8) (err error) {
 	return nil
 }
 

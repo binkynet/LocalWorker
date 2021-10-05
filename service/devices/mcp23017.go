@@ -31,7 +31,7 @@ type mcp23017 struct {
 	mutex    sync.Mutex
 	onActive func()
 	config   model.Device
-	bus      bridge.I2CBus
+	dev      bridge.I2CDevice
 	address  byte
 	iodir    []byte
 	value    []byte
@@ -71,10 +71,14 @@ func newMcp23017(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO,
 	if err != nil {
 		return nil, err
 	}
+	dev, err := bus.OpenDevice(uint8(address))
+	if err != nil {
+		return nil, err
+	}
 	return &mcp23017{
 		onActive: onActive,
 		config:   config,
-		bus:      bus,
+		dev:      dev,
 		address:  byte(address),
 		iodir:    []byte{0xff, 0xff},
 		value:    []byte{0, 0},
@@ -89,13 +93,13 @@ func (d *mcp23017) Configure(ctx context.Context) error {
 	d.iodir[0] = 0xff
 	d.iodir[1] = 0xff
 	d.onActive()
-	if err := d.bus.WriteByteReg(d.address, mcp23017RegIOCON, 0x20); err != nil {
+	if err := d.dev.WriteByteReg(mcp23017RegIOCON, 0x20); err != nil {
 		return err
 	}
-	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
+	if err := d.dev.WriteByteReg(mcp23017RegIODIRA, d.iodir[0]); err != nil {
 		return err
 	}
-	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
+	if err := d.dev.WriteByteReg(mcp23017RegIODIRB, d.iodir[1]); err != nil {
 		return err
 	}
 	return nil
@@ -110,10 +114,10 @@ func (d *mcp23017) Close() error {
 	d.iodir[0] = 0xff
 	d.iodir[1] = 0xff
 	d.onActive()
-	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA, d.iodir[0]); err != nil {
+	if err := d.dev.WriteByteReg(mcp23017RegIODIRA, d.iodir[0]); err != nil {
 		return err
 	}
-	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRB, d.iodir[1]); err != nil {
+	if err := d.dev.WriteByteReg(mcp23017RegIODIRB, d.iodir[1]); err != nil {
 		return err
 	}
 	return nil
@@ -139,7 +143,7 @@ func (d *mcp23017) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 	} else {
 		d.iodir[regOffset] &= ^mask
 	}
-	if err := d.bus.WriteByteReg(d.address, mcp23017RegIODIRA+regOffset, d.iodir[regOffset]); err != nil {
+	if err := d.dev.WriteByteReg(mcp23017RegIODIRA+regOffset, d.iodir[regOffset]); err != nil {
 		return err
 	}
 	return nil
@@ -154,7 +158,7 @@ func (d *mcp23017) GetDirection(ctx context.Context, pin model.DeviceIndex) (Pin
 	if err != nil {
 		return PinDirectionInput, err
 	}
-	value, err := d.bus.ReadByteReg(d.address, mcp23017RegIODIRA+regOffset)
+	value, err := d.dev.ReadByteReg(mcp23017RegIODIRA + regOffset)
 	if err != nil {
 		return PinDirectionInput, err
 	}
@@ -181,7 +185,7 @@ func (d *mcp23017) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 		} else {
 			d.value[regOffset] &= ^mask
 		}
-		if err := d.bus.WriteByteReg(d.address, mcp23017RegGPIOA+regOffset, d.value[regOffset]); err != nil {
+		if err := d.dev.WriteByteReg(mcp23017RegGPIOA+regOffset, d.value[regOffset]); err != nil {
 			return err
 		}
 		return nil
@@ -198,7 +202,7 @@ func (d *mcp23017) Get(ctx context.Context, pin model.DeviceIndex) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	value, err := d.bus.ReadByteReg(d.address, mcp23017RegGPIOA+regOffset)
+	value, err := d.dev.ReadByteReg(mcp23017RegGPIOA + regOffset)
 	if err != nil {
 		return false, err
 	}

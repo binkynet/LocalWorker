@@ -106,7 +106,7 @@ func (s *service) Configure(ctx context.Context) error {
 	var ae aerr.AggregateError
 	configuredDevices := make(map[model.DeviceID]Device)
 	for id, d := range s.devices {
-		log := log.With().Str("id", string(id)).Logger()
+		log := log.With().Str("device-id", string(id)).Logger()
 		log.Debug().Msg("configuring device...")
 		if err := d.Configure(ctx); err != nil {
 			log.Error().Err(err).Msg("Failed to configure device")
