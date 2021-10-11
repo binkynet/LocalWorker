@@ -190,6 +190,8 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 // Run the object until the given context is cancelled.
 func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
 	defer o.log.Debug().Msg("servoSwitch.Run terminated")
+	// Ensure we initialize directly after start
+	atomic.StoreInt32(&o.sendActualNeeded, 1)
 	for {
 		targetPL := o.targetPL
 		if targetPL != o.currentPL {
@@ -212,9 +214,6 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				nextPL = o.currentPL - step
 			}
-			o.log.Debug().
-				Int("pulse", nextPL).
-				Msg("Set servo")
 			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL); err != nil {
 				// oops
 				o.log.Debug().
@@ -248,6 +247,10 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			// Send actual message (if needed)
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
 			if sendNeeded {
+				o.log.Debug().
+					Int("pulse", o.currentPL).
+					Msg("Servo reached state, sending actual")
+
 				msg := model.Switch{
 					Address: o.address,
 					Request: &model.SwitchState{
