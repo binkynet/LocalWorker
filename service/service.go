@@ -75,6 +75,7 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to create host ID")
 	}
+	deps.Logger = deps.Logger.With().Str("module-id", hostID).Logger()
 	s := &service{
 		Config:           conf,
 		Dependencies:     deps,

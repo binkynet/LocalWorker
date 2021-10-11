@@ -24,7 +24,9 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
+	utils "github.com/binkynet/LocalWorker/service/util"
 )
 
 // StatusService is used by object types to report their status to the network master.
@@ -51,60 +53,75 @@ func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorker
 	g, ctx := errgroup.WithContext(ctx)
 	// Send output actuals
 	g.Go(func() error {
-		server, err := lwControlClient.SetOutputActuals(ctx, grpc_retry.Disable())
-		if err != nil {
-			return err
-		}
-		defer server.CloseSend()
-		for {
-			select {
-			case msg := <-s.outputActuals:
-				if err := server.Send(&msg); err != nil {
-					log.Debug().Err(err).Msg("Send(Output) failed")
-					return err
+		once := func() error {
+			server, err := lwControlClient.SetOutputActuals(ctx, grpc_retry.Disable())
+			if err != nil {
+				return err
+			}
+			defer server.CloseSend()
+			for {
+				select {
+				case msg := <-s.outputActuals:
+					if err := server.Send(&msg); util.IsStreamClosed(err) || ctx.Err() != nil {
+						return nil
+					} else if err != nil {
+						log.Debug().Err(err).Msg("Send(Output) failed")
+						return err
+					}
+				case <-ctx.Done():
+					return nil
 				}
-			case <-ctx.Done():
-				return nil
 			}
 		}
+		return utils.UntilCanceled(ctx, log, "sendOutputActuals", once)
 	})
 	// Send sensor actuals
 	g.Go(func() error {
-		server, err := lwControlClient.SetSensorActuals(ctx, grpc_retry.Disable())
-		if err != nil {
-			return err
-		}
-		defer server.CloseSend()
-		for {
-			select {
-			case msg := <-s.sensorActuals:
-				if err := server.Send(&msg); err != nil {
-					log.Debug().Err(err).Msg("Send(Sensor) failed")
-					return err
+		once := func() error {
+			server, err := lwControlClient.SetSensorActuals(ctx, grpc_retry.Disable())
+			if err != nil {
+				return err
+			}
+			defer server.CloseSend()
+			for {
+				select {
+				case msg := <-s.sensorActuals:
+					if err := server.Send(&msg); util.IsStreamClosed(err) || ctx.Err() != nil {
+						return nil
+					} else if err != nil {
+						log.Debug().Err(err).Msg("Send(Sensor) failed")
+						return err
+					}
+				case <-ctx.Done():
+					return nil
 				}
-			case <-ctx.Done():
-				return nil
 			}
 		}
+		return utils.UntilCanceled(ctx, log, "sendSensorActuals", once)
 	})
 	// Send switch actuals
 	g.Go(func() error {
-		server, err := lwControlClient.SetSwitchActuals(ctx, grpc_retry.Disable())
-		if err != nil {
-			return err
-		}
-		defer server.CloseSend()
-		for {
-			select {
-			case msg := <-s.switchActuals:
-				if err := server.Send(&msg); err != nil {
-					log.Debug().Err(err).Msg("Send(Switch) failed")
-					return err
+		once := func() error {
+			server, err := lwControlClient.SetSwitchActuals(ctx, grpc_retry.Disable())
+			if err != nil {
+				return err
+			}
+			defer server.CloseSend()
+			for {
+				select {
+				case msg := <-s.switchActuals:
+					if err := server.Send(&msg); util.IsStreamClosed(err) || ctx.Err() != nil {
+						return nil
+					} else if err != nil {
+						log.Debug().Err(err).Msg("Send(Switch) failed")
+						return err
+					}
+				case <-ctx.Done():
+					return nil
 				}
-			case <-ctx.Done():
-				return nil
 			}
 		}
+		return utils.UntilCanceled(ctx, log, "sendSwitchActuals", once)
 	})
 	return g.Wait()
 }

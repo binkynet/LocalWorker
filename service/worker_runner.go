@@ -37,7 +37,7 @@ func (s *service) runWorkers(ctx context.Context,
 	// Keep running a worker
 	log = log.With().Str("component", "worker-runner").Logger()
 	var conf *api.LocalWorkerConfig
-	lctx, cancel := context.WithCancel(ctx)
+	var cancel context.CancelFunc
 	for {
 		select {
 		case c := <-configChanged:
@@ -45,7 +45,9 @@ func (s *service) runWorkers(ctx context.Context,
 			if c != nil {
 				conf = c
 				log.Debug().Msg("Configuration changed")
-				cancel()
+				if cancel != nil {
+					cancel()
+				}
 			} else {
 				log.Warn().Msg("Received nil configuration")
 				continue
@@ -53,19 +55,22 @@ func (s *service) runWorkers(ctx context.Context,
 		case <-stopWorker:
 			log.Info().Msg("Stop worker")
 			conf = nil
-			cancel()
+			if cancel != nil {
+				cancel()
+			}
 			return nil
 		case <-ctx.Done():
 			// Context canceled
-			cancel()
+			if cancel != nil {
+				cancel()
+			}
 			return nil
-		case <-lctx.Done():
-			// Worker finished
 		}
 
 		// Prepare new worker
-		lctx, cancel = context.WithCancel(ctx)
 		if conf != nil {
+			var lctx context.Context
+			lctx, cancel = context.WithCancel(ctx)
 			moduleID := s.hostID
 			if alias := conf.GetAlias(); alias != "" {
 				moduleID = alias
@@ -82,9 +87,9 @@ func (s *service) runWorkers(ctx context.Context,
 					log.Warn().Err(err).Msg("Failed to acquire worker semaphore")
 					return
 				}
-				log.Debug().Msg("Acquired worker semaphore")
 				// Release semaphore when worker is done.
 				defer s.workerSem.Release(1)
+				log.Debug().Msg("Acquired worker semaphore")
 
 				// Check context cancelation
 				if err := ctx.Err(); err != nil {
@@ -129,11 +134,11 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 		} else {
 			// Run worker
 			log.Debug().Msg("start to run worker...")
-			if err := w.Run(ctx, lwControlClient); err != nil && ctx.Err() == nil {
-				log.Error().Err(err).Msg("Failed to run worker")
-			} else if ctx.Err() != nil {
+			if err := w.Run(ctx, lwControlClient); ctx.Err() != nil {
 				log.Info().Msg("Worker ended with context cancellation")
 				return
+			} else if err != nil {
+				log.Error().Err(err).Msg("Failed to run worker")
 			} else {
 				log.Info().Err(err).Msg("Worker ended without context cancellation")
 			}

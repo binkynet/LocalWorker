@@ -78,6 +78,10 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 		// Log error
 		log.Error().Err(err).Msg("Not all devices are configured")
 	}
+	// Stop fast if context canceled
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	// Build objects service
 	log.Debug().Msg("build objects service")
@@ -93,6 +97,10 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	if err := objService.Configure(ctx); err != nil {
 		// Log error
 		s.Log.Error().Err(err).Msg("Not all objects are configured")
+	}
+	// Stop fast if context canceled
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	// Run devices & objects
