@@ -26,8 +26,8 @@ import (
 	"github.com/binkynet/LocalWorker/service/worker"
 )
 
-// runWorker keeps creating and running workers until the given context is cancelled.
-func (s *service) runWorker(ctx context.Context,
+// runWorkers keeps creating and running workers until the given context is cancelled.
+func (s *service) runWorkers(ctx context.Context,
 	log zerolog.Logger,
 	lwConfigClient api.LocalWorkerConfigServiceClient,
 	lwControlClient api.LocalWorkerControlServiceClient,
@@ -54,6 +54,7 @@ func (s *service) runWorker(ctx context.Context,
 			log.Info().Msg("Stop worker")
 			conf = nil
 			cancel()
+			return nil
 		case <-ctx.Done():
 			// Context canceled
 			cancel()
@@ -70,16 +71,18 @@ func (s *service) runWorker(ctx context.Context,
 				moduleID = alias
 			}
 			workerID := atomic.AddUint32(&s.lastWorkerID, 1)
-			log = log.With().
+			log := log.With().
 				Str("module-id", moduleID).
 				Uint32("worker-id", workerID).
 				Logger()
 			go func(ctx context.Context, log zerolog.Logger, conf api.LocalWorkerConfig) {
 				// Aqcuire the semaphore
+				log.Debug().Msg("Acquiring worker semaphore...")
 				if err := s.workerSem.Acquire(ctx, 1); err != nil {
 					log.Warn().Err(err).Msg("Failed to acquire worker semaphore")
 					return
 				}
+				log.Debug().Msg("Acquired worker semaphore")
 				// Release semaphore when worker is done.
 				defer s.workerSem.Release(1)
 
@@ -128,8 +131,11 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 			log.Debug().Msg("start to run worker...")
 			if err := w.Run(ctx, lwControlClient); err != nil && ctx.Err() == nil {
 				log.Error().Err(err).Msg("Failed to run worker")
+			} else if ctx.Err() != nil {
+				log.Info().Msg("Worker ended with context cancellation")
+				return
 			} else {
-				log.Info().Err(err).Msg("Worker ended")
+				log.Info().Err(err).Msg("Worker ended without context cancellation")
 			}
 		}
 		select {

@@ -254,7 +254,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context,
 
 	// Keep running a worker
 	g.Go(func() error {
-		return s.runWorker(ctx, log, lwConfigClient, lwControlClient, configChanged, stopWorker)
+		return s.runWorkers(ctx, log, lwConfigClient, lwControlClient, configChanged, stopWorker)
 	})
 
 	return g.Wait()

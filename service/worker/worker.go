@@ -2,10 +2,12 @@ package worker
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/sync/errgroup"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
+	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
 	"github.com/binkynet/LocalWorker/service/bridge"
@@ -54,14 +56,14 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	bus, err := s.Bridge.I2CBus()
 	if err != nil {
 		log.Debug().Err(err).Msg("Open I2CBus failed")
-		return maskAny(err)
+		return fmt.Errorf("failed to open I2C bus: %w", err)
 	}
 	// Build devices service
 	log.Debug().Msg("build devices service")
 	devService, err := devices.NewService(s.config.HardwareID, s.config.ModuleID, s.config.ProgramVersion, s.config.GetDevices(), s.Bridge, bus, s.Log)
 	if err != nil {
 		log.Debug().Err(err).Msg("devices.NewService failed")
-		return maskAny(err)
+		return fmt.Errorf("devices.NewService failed: %w", err)
 	}
 	s.devService = devService
 
@@ -82,7 +84,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, devService, s.Log.With().Str("component", "worker.objects").Logger())
 	if err != nil {
 		log.Debug().Err(err).Msg("objects.NewService failed")
-		return maskAny(err)
+		return fmt.Errorf("objects.NewService failed: %w", err)
 	}
 	s.objService = objService
 
@@ -99,7 +101,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 		log.Debug().Msg("run devices")
 		if err := devService.Run(lctx, lwControlClient); err != nil {
 			log.Error().Err(err).Msg("Run devices failed")
-			return maskAny(err)
+			return fmt.Errorf("failed to run devices: %w", err)
 		}
 		log.Debug().Msg("run devices ended")
 		return nil
@@ -108,13 +110,13 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 		s.Log.Debug().Msg("run objects")
 		if err := objService.Run(lctx, lwControlClient); err != nil {
 			log.Error().Err(err).Msg("Run objects failed")
-			return maskAny(err)
+			return fmt.Errorf("failed to run objects: %w", err)
 		}
 		s.Log.Debug().Msg("run objects ended")
 		return nil
 	})
 	if err := g.Wait(); err != nil {
-		return maskAny(err)
+		return errors.Wrap(err, "Wait failed")
 	}
 
 	return nil
