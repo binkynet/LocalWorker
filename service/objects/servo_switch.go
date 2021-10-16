@@ -238,11 +238,13 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 				if err := r.activateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
 				}
+				//o.log.Debug().Msg("Activated straight")
 			}
 			if r := o.servo.phaseOff; r != nil && currentDirection == model.SwitchDirection_OFF {
 				if err := r.activateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
 				}
+				//o.log.Debug().Msg("Activated off")
 			}
 			// Send actual message (if needed)
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)

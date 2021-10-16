@@ -61,8 +61,8 @@ type trackInverter struct {
 	relayOutAInB     *phaseRelay
 	relayOutBInA     *phaseRelay
 	relayOutBInB     *phaseRelay
-	targetState      bool
-	currentState     bool
+	targetState      model.TrackInverterState
+	currentState     model.TrackInverterState
 	sendActualNeeded int32
 }
 
@@ -169,7 +169,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 			}
 
 			// Now set the desired relays
-			if o.targetState {
+			if o.targetState == model.TrackInverterStateDefault {
 				if r := o.relayOutAInA; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
@@ -180,7 +180,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
 					}
 				}
-			} else {
+			} else if o.targetState == model.TrackInverterStateReverse {
 				if r := o.relayOutAInB; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
@@ -201,10 +201,10 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 			msg := model.Output{
 				Address: o.address,
 				Request: &model.OutputState{
-					Value: boolToInt32(o.targetState),
+					Value: int32(o.targetState),
 				},
 				Actual: &model.OutputState{
-					Value: boolToInt32(o.targetState),
+					Value: int32(o.targetState),
 				},
 			}
 			statuses.PublishOutputActual(msg)
@@ -221,7 +221,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 // ProcessMessage acts upons a given request.
 func (o *trackInverter) ProcessMessage(ctx context.Context, r model.Output) error {
 	value := r.GetRequest().GetValue()
-	o.targetState = int32ToBool(value)
+	o.targetState = model.TrackInverterState(value)
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
 	return nil
 }

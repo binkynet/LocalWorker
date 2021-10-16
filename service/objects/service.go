@@ -101,8 +101,18 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 // ObjectByAddress returns the object with given object address.
 // Return false if not found or not configured.
 func (s *service) ObjectByAddress(address model.ObjectAddress) (Object, bool) {
-	dev, ok := s.configuredObjects[address]
-	return dev, ok
+	// Try module local addresses
+	if dev, ok := s.configuredObjects[address]; ok {
+		return dev, true
+	}
+	// Try global addresses
+	if module, id, err := model.SplitAddress(address); err == nil && module == model.GlobalModuleID {
+		localAddr := model.JoinModuleLocal(s.moduleID, id)
+		if dev, ok := s.configuredObjects[localAddr]; ok {
+			return dev, true
+		}
+	}
+	return nil, false
 }
 
 // Configure is called once to put all objects in the desired state.
