@@ -149,8 +149,10 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 	defer o.log.Debug().Msg("trackInverter.Run terminated")
 	initialized := false
 	for {
+		delay := time.Millisecond * 5
 		if !initialized || o.targetState != o.currentState {
 			o.log.Debug().Msg("De-activate inverter")
+			delay = time.Millisecond
 			// First deactivate all relays
 			if r := o.relayOutAInA; r != nil {
 				if err := r.deactivateRelay(ctx); err != nil {
@@ -217,7 +219,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 			statuses.PublishOutputActual(msg)
 		}
 		select {
-		case <-time.After(time.Millisecond * 50):
+		case <-time.After(delay):
 			// Continue
 		case <-ctx.Done():
 			return nil
