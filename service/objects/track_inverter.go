@@ -32,8 +32,11 @@ var (
 	trackInverterType = &ObjectType{
 		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
 			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
-				log := log.With().Str("address", string(msg.Address)).Logger()
-				//log.Debug().Msg("got message")
+				log := log.With().
+					Str("address", string(msg.Address)).
+					Int32("value", msg.GetRequest().GetValue()).
+					Logger()
+				log.Debug().Msg("got inverter output message")
 				if obj, found := service.ObjectByAddress(msg.Address); found {
 					if x, ok := obj.(*trackInverter); ok {
 						if err := x.ProcessMessage(ctx, msg); err != nil {
@@ -146,6 +149,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 	initialized := false
 	for {
 		if !initialized || o.targetState != o.currentState {
+			o.log.Debug().Msg("De-activate inverter")
 			// First deactivate all relays
 			if r := o.relayOutAInA; r != nil {
 				if err := r.deactivateRelay(ctx); err != nil {
@@ -170,6 +174,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 
 			// Now set the desired relays
 			if o.targetState == model.TrackInverterStateDefault {
+				o.log.Debug().Msg("Activate inverter as default")
 				if r := o.relayOutAInA; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
@@ -181,6 +186,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 					}
 				}
 			} else if o.targetState == model.TrackInverterStateReverse {
+				o.log.Debug().Msg("Activate inverter as reverse")
 				if r := o.relayOutAInB; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
