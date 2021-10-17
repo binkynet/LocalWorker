@@ -61,15 +61,16 @@ func (s *requestService) Run(ctx context.Context, moduleID string, lwControlClie
 			if err != nil {
 				return err
 			}
-			msg, err := server.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				return nil
-			} else if err != nil {
-				log.Warn().Err(err).Msg("Recv(Output) failed")
-			} else {
-				s.outputRequests.Pub(*msg)
+			for {
+				msg, err := server.Recv()
+				if util.IsStreamClosed(err) || ctx.Err() != nil {
+					return nil
+				} else if err != nil {
+					log.Warn().Err(err).Msg("Recv(Output) failed")
+				} else {
+					s.outputRequests.Pub(*msg)
+				}
 			}
-			return nil
 		}
 		return utils.UntilCanceled(ctx, log, "receiveOutputRequests", once)
 	})
@@ -83,15 +84,16 @@ func (s *requestService) Run(ctx context.Context, moduleID string, lwControlClie
 			if err != nil {
 				return err
 			}
-			msg, err := server.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				return nil
-			} else if err != nil {
-				log.Warn().Err(err).Msg("Recv(Switch) failed")
-			} else {
-				s.switchRequests.Pub(*msg)
+			for {
+				msg, err := server.Recv()
+				if util.IsStreamClosed(err) || ctx.Err() != nil {
+					return nil
+				} else if err != nil {
+					log.Warn().Err(err).Msg("Recv(Switch) failed")
+				} else {
+					s.switchRequests.Pub(*msg)
+				}
 			}
-			return nil
 		}
 		return utils.UntilCanceled(ctx, log, "receiveSwitchRequests", once)
 	})
@@ -99,15 +101,25 @@ func (s *requestService) Run(ctx context.Context, moduleID string, lwControlClie
 }
 
 func (s *requestService) RegisterOutputRequestReceiver(cb func(api.Output) error) context.CancelFunc {
-	s.outputRequests.Sub(cb)
+	wcb := func(x api.Output) {
+		if err := cb(x); err != nil {
+			s.log.Warn().Err(err).Msg("Output processing error")
+		}
+	}
+	s.outputRequests.Sub(wcb)
 	return func() {
-		s.outputRequests.Leave(cb)
+		s.outputRequests.Leave(wcb)
 	}
 }
 
 func (s *requestService) RegisterSwitchRequestReceiver(cb func(api.Switch) error) context.CancelFunc {
-	s.switchRequests.Sub(cb)
+	wcb := func(x api.Switch) {
+		if err := cb(x); err != nil {
+			s.log.Warn().Err(err).Msg("Switch processing error")
+		}
+	}
+	s.switchRequests.Sub(wcb)
 	return func() {
-		s.switchRequests.Leave(cb)
+		s.switchRequests.Leave(wcb)
 	}
 }

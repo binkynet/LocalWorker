@@ -35,8 +35,8 @@ import (
 // Service contains the API that is exposed by the object service.
 type Service interface {
 	// ObjectByAddress returns the object with given address.
-	// Return false if not found
-	ObjectByAddress(address model.ObjectAddress) (Object, bool)
+	// Returns: Object, IsGlobal, error
+	ObjectByAddress(address model.ObjectAddress) (Object, bool, bool)
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
@@ -99,20 +99,24 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 }
 
 // ObjectByAddress returns the object with given object address.
-// Return false if not found or not configured.
-func (s *service) ObjectByAddress(address model.ObjectAddress) (Object, bool) {
+// Returns: Object, IsGlobal, error
+func (s *service) ObjectByAddress(address model.ObjectAddress) (Object, bool, bool) {
+	// Split address
+	module, id, _ := model.SplitAddress(address)
+	isGlobal := module == model.GlobalModuleID
+
 	// Try module local addresses
 	if dev, ok := s.configuredObjects[address]; ok {
-		return dev, true
+		return dev, isGlobal, true
 	}
 	// Try global addresses
-	if module, id, err := model.SplitAddress(address); err == nil && module == model.GlobalModuleID {
+	if isGlobal {
 		localAddr := model.JoinModuleLocal(s.moduleID, id)
 		if dev, ok := s.configuredObjects[localAddr]; ok {
-			return dev, true
+			return dev, true, true
 		}
 	}
-	return nil, false
+	return nil, isGlobal, false
 }
 
 // Configure is called once to put all objects in the desired state.

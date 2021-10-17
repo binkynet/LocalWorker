@@ -32,21 +32,22 @@ var (
 	trackInverterType = &ObjectType{
 		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
 			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
-				log := log.With().
-					Str("address", string(msg.Address)).
-					Int32("value", msg.GetRequest().GetValue()).
-					Logger()
-				log.Debug().Msg("got inverter output message")
-				if obj, found := service.ObjectByAddress(msg.Address); found {
+				// log := log.With().
+				// 	Str("address", string(msg.Address)).
+				// 	Int32("value", msg.GetRequest().GetValue()).
+				// 	Logger()
+				// log.Debug().Msg("got inverter output message")
+				if obj, isGlobal, found := service.ObjectByAddress(msg.Address); found {
 					if x, ok := obj.(*trackInverter); ok {
 						if err := x.ProcessMessage(ctx, msg); err != nil {
+							log.Error().Err(err).Msg("ProcessMessage failed")
 							return err
 						}
 					} else {
 						return errors.Errorf("Expected object of type trackInverter")
 					}
-				} else {
-					log.Debug().Msg("object not found")
+				} else if !isGlobal {
+					log.Debug().Msg("track-inverter object not found")
 				}
 				return nil
 			})

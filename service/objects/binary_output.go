@@ -32,7 +32,7 @@ var (
 			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
 				log := log.With().Str("address", string(msg.Address)).Logger()
 				//log.Debug().Msg("got message")
-				if obj, found := service.ObjectByAddress(msg.Address); found {
+				if obj, isGlobal, found := service.ObjectByAddress(msg.Address); found {
 					if x, ok := obj.(*binaryOutput); ok {
 						if err := x.ProcessMessage(ctx, msg); err != nil {
 							return err
@@ -40,8 +40,8 @@ var (
 					} else {
 						return errors.Errorf("Expected object of type binaryOutput")
 					}
-				} else {
-					log.Debug().Msg("object not found")
+				} else if !isGlobal {
+					log.Debug().Msg("binary-output object not found")
 				}
 				return nil
 			})
