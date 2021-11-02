@@ -173,6 +173,29 @@ func (d *i2cDevice) WriteByteReg(reg uint8, val uint8) (err error) {
 	return nil
 }
 
+// Read a byte from device
+func (d *i2cDevice) ReadByte() (uint8, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	val, err := d.readByte()
+	if err != nil {
+		return 0, errors.Wrapf(err, "readByte[0x%0x] failed", d.address)
+	}
+	return val, nil
+}
+
+// Write a byte to device
+func (d *i2cDevice) WriteByte(val uint8) (err error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if err := d.writeByte(val); err != nil {
+		return errors.Wrapf(err, "writeByte[0x%0x](0x%0x) failed", d.address, val)
+	}
+	return nil
+}
+
 func (d *i2cDevice) quick() (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_QUICK == 0 {
 		return fmt.Errorf("SMBus quick not supported")

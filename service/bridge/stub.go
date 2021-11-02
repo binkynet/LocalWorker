@@ -41,6 +41,14 @@ func (s *stubI2CBus) WriteByteReg(reg uint8, val uint8) (err error) {
 	return nil
 }
 
+func (s *stubI2CBus) ReadByte() (uint8, error) {
+	return 0, nil
+}
+
+func (s *stubI2CBus) WriteByte(val uint8) (err error) {
+	return nil
+}
+
 // DetectSlaveAddresses probes the bus to detect available addresses.
 func (s *stubI2CBus) DetectSlaveAddresses() []byte {
 	return nil

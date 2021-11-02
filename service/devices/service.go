@@ -82,6 +82,8 @@ func NewService(hardwareID, moduleID, programVersion string, configs []*model.De
 			dev, err = newMcp23017(*c, bus, s.onActive)
 		case model.DeviceTypePCA9685:
 			dev, err = newPCA9685(*c, bus, s.onActive)
+		case model.DeviceTypePCF8574:
+			dev, err = newPCF8574(*c, bus, s.onActive)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}

@@ -36,8 +36,14 @@ type I2CBus interface {
 // I2CDevice communicates with a device on the I2C Bus that has a specific address.
 type I2CDevice interface {
 	Close() error
+	// Read a byte from given register
 	ReadByteReg(reg uint8) (uint8, error)
+	// Write a byte to given register
 	WriteByteReg(reg uint8, val uint8) (err error)
+	// Read a byte from device
+	ReadByte() (uint8, error)
+	// Write a byte to device
+	WriteByte(val uint8) (err error)
 }
 
 type i2cBus struct {
