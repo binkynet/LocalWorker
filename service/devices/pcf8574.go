@@ -30,8 +30,7 @@ type pcf8574 struct {
 	mutex     sync.Mutex
 	onActive  func()
 	config    model.Device
-	devWrite  bridge.I2CDevice
-	devRead   bridge.I2CDevice
+	dev       bridge.I2CDevice
 	address   byte // Address for writing. Address for reading is 1 higher
 	direction byte // 1/0 per bit means read/write
 	output    byte // 1/0 bit per pin
@@ -46,19 +45,14 @@ func newPCF8574(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO, 
 	if err != nil {
 		return nil, err
 	}
-	devWrite, err := bus.OpenDevice(uint8(address))
-	if err != nil {
-		return nil, err
-	}
-	devRead, err := bus.OpenDevice(uint8(address + 1))
+	dev, err := bus.OpenDevice(uint8(address))
 	if err != nil {
 		return nil, err
 	}
 	return &pcf8574{
 		onActive:  onActive,
 		config:    config,
-		devWrite:  devWrite,
-		devRead:   devRead,
+		dev:       dev,
 		address:   byte(address),
 		direction: 0xff, // All read
 		output:    0,    // All 0
@@ -70,8 +64,13 @@ func (d *pcf8574) Configure(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	// TODO
+	// Initialize to all INPUT HIGH
 	d.onActive()
+	d.direction = 0xff
+	d.output = 0
+	if err := d.dev.WriteByte(0xff); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -84,7 +83,7 @@ func (d *pcf8574) Close() error {
 	d.onActive()
 	d.direction = 0xff
 	d.output = 0
-	if err := d.devWrite.WriteByte(0xff); err != nil {
+	if err := d.dev.WriteByte(0xff); err != nil {
 		return err
 	}
 	return nil
@@ -116,7 +115,7 @@ func (d *pcf8574) SetDirection(ctx context.Context, index model.DeviceIndex, dir
 	}
 
 	// Set initial value
-	if err := d.devWrite.WriteByte(d.mergeDirectionAndOutput()); err != nil {
+	if err := d.dev.WriteByte(d.mergeDirectionAndOutput()); err != nil {
 		return err
 	}
 
@@ -166,7 +165,7 @@ func (d *pcf8574) Set(ctx context.Context, index model.DeviceIndex, value bool) 
 	}
 
 	// Set updated value
-	if err := d.devWrite.WriteByte(d.mergeDirectionAndOutput()); err != nil {
+	if err := d.dev.WriteByte(d.mergeDirectionAndOutput()); err != nil {
 		return err
 	}
 
@@ -185,7 +184,7 @@ func (d *pcf8574) Get(ctx context.Context, index model.DeviceIndex) (bool, error
 	}
 
 	// Read current value
-	x, err := d.devRead.ReadByte()
+	x, err := d.dev.ReadByte()
 	if err != nil {
 		return false, err
 	}
