@@ -81,7 +81,7 @@ func newMcp23017(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO,
 		dev:      dev,
 		address:  byte(address),
 		iodir:    []byte{0xff, 0xff},
-		value:    []byte{0, 0},
+		value:    []byte{0xff, 0xff}, // Default high
 	}, nil
 }
 

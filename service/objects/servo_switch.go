@@ -64,7 +64,7 @@ func (r *phaseRelay) configure(ctx context.Context) error {
 	if err := r.device.SetDirection(ctx, r.pin, devices.PinDirectionOutput); err != nil {
 		return err
 	}
-	if err := r.device.Set(ctx, r.pin, false); err != nil {
+	if err := r.device.Set(ctx, r.pin, r.pinValue(false)); err != nil {
 		return err
 	}
 	r.lastActive = false
