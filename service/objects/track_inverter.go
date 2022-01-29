@@ -95,9 +95,11 @@ func newTrackInverter(sender string, oid model.ObjectID, address model.ObjectAdd
 		if pin < 1 || uint(pin) > gpio.PinCount() {
 			return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", connectionName, oid, pin, gpio.PinCount())
 		}
+		invert := conn.GetBoolConfig(model.ConfigKeyInvert)
 		return &phaseRelay{
 			device: gpio,
 			pin:    pin,
+			invert: invert,
 		}, nil
 	}
 	obj := &trackInverter{
