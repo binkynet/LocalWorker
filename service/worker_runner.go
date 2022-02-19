@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -114,7 +113,7 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Println(err)
+			log.Error().Interface("err", err).Msg("Recovered from panic")
 		}
 	}()
 	for {

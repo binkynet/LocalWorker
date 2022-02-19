@@ -49,6 +49,7 @@ func (s *service) runLoadConfig(ctx context.Context,
 			return err
 		}
 		defer confStream.CloseSend()
+		var lastConf *api.LocalWorkerConfig
 		for {
 			// Read configuration
 			conf, err := confStream.Recv()
@@ -58,13 +59,18 @@ func (s *service) runLoadConfig(ctx context.Context,
 				log.Error().Err(err).Msg("Failed to read configuration")
 				return nil
 			}
-			log.Debug().Msg("Received new configuration")
-			select {
-			case configChanged <- conf:
-				// Continue
-			case <-ctx.Done():
-				// Context canceled
-				return nil
+			if conf.Equal(lastConf) {
+				log.Debug().Msg("Received identical configuration")
+			} else {
+				log.Debug().Msg("Received new configuration")
+				lastConf = conf
+				select {
+				case configChanged <- conf:
+					// Continue
+				case <-ctx.Done():
+					// Context canceled
+					return nil
+				}
 			}
 		}
 	}

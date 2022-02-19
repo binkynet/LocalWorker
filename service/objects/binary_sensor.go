@@ -33,6 +33,10 @@ var (
 	}
 )
 
+const (
+	lastSensorSentThreshold = time.Second * 15
+)
+
 type binarySensor struct {
 	log         zerolog.Logger
 	config      model.Object
@@ -100,6 +104,7 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 	changes := 0
 	recentErrors := 0
 	log := o.log
+	lastSent := time.Now()
 	for {
 		delay := time.Millisecond * 50
 
@@ -117,7 +122,7 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 			}
 			recentErrors = 0
 			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
-			if force || lastValue != value || changes == 0 {
+			if force || lastValue != value || changes == 0 || time.Since(lastSent) > lastSensorSentThreshold {
 				// Send feedback data
 				log = log.With().
 					Bool("value", value).
@@ -133,6 +138,7 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 				lastValue = value
 				statuses.PublishSensorActual(actual)
 				changes++
+				lastSent = time.Now()
 			}
 		}
 
