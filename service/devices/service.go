@@ -207,6 +207,7 @@ func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient m
 			for _, addr := range addrs {
 				result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
 			}
+			log.Info().Strs("addresses", result.GetAddresses()).Msg("Discovered addresses")
 			if _, err := lwControlClient.SetDiscoverResult(ctx, result); err != nil {
 				log.Warn().Err(err).Msg("SetDiscoverResult failed")
 				return err

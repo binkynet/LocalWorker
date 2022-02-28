@@ -43,8 +43,9 @@ type Config struct {
 }
 
 type Dependencies struct {
-	Logger zerolog.Logger
-	Bridge bridge.API
+	Logger     zerolog.Logger
+	Bridge     bridge.API
+	LokiLogger LokiLogger
 }
 
 type service struct {
@@ -63,8 +64,11 @@ type service struct {
 
 	lwConfigListener  *discovery.ServiceListener
 	lwControlListener *discovery.ServiceListener
+	lokiListener      *discovery.ServiceListener
 	lwConfigChanges   chan api.ServiceInfo
 	lwControlChanges  chan api.ServiceInfo
+	lokiChanges       chan api.ServiceInfo
+	timeOffsetChanges chan int64
 }
 
 // NewService creates a Service instance and returns it.
@@ -77,17 +81,20 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 	}
 	deps.Logger = deps.Logger.With().Str("module-id", hostID).Logger()
 	s := &service{
-		Config:           conf,
-		Dependencies:     deps,
-		hostID:           hostID,
-		lwConfigChanges:  make(chan api.ServiceInfo),
-		lwControlChanges: make(chan api.ServiceInfo),
-		environmentSem:   semaphore.NewWeighted(1),
-		workerSem:        semaphore.NewWeighted(1),
-		startedAt:        time.Now(),
+		Config:            conf,
+		Dependencies:      deps,
+		hostID:            hostID,
+		lwConfigChanges:   make(chan api.ServiceInfo),
+		lwControlChanges:  make(chan api.ServiceInfo),
+		lokiChanges:       make(chan api.ServiceInfo),
+		timeOffsetChanges: make(chan int64),
+		environmentSem:    semaphore.NewWeighted(1),
+		workerSem:         semaphore.NewWeighted(1),
+		startedAt:         time.Now(),
 	}
 	s.lwConfigListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerConfig, true, s.lwConfigChanged)
 	s.lwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerControl, true, s.lwControlChanged)
+	s.lokiListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLokiProvider, true, s.lokiChanged)
 	return s, nil
 }
 
@@ -111,6 +118,8 @@ func (s *service) Run(ctx context.Context) error {
 	// Start discovery listeners
 	go s.lwConfigListener.Run(ctx)
 	go s.lwControlListener.Run(ctx)
+	go s.lokiListener.Run(ctx)
+	go s.LokiLogger.Run(ctx, log, s.hostID, s.lokiChanges, s.timeOffsetChanges)
 
 	for {
 		// Register worker
@@ -204,6 +213,11 @@ func (s *service) lwControlChanged(info api.ServiceInfo) {
 	s.lwControlChanges <- info
 }
 
+// Loki service has changed
+func (s *service) lokiChanged(info api.ServiceInfo) {
+	s.lokiChanges <- info
+}
+
 // Run the worker until the given context is cancelled.
 func (s *service) runWorkerInEnvironment(ctx context.Context,
 	log zerolog.Logger,
@@ -250,7 +264,7 @@ func (s *service) runWorkerInEnvironment(ctx context.Context,
 
 	// Keep requesting configuration in stream
 	g.Go(func() error {
-		return s.runLoadConfig(ctx, log, lwConfigClient, lwControlClient, configChanged, stopWorker)
+		return s.runLoadConfig(ctx, log, lwConfigClient, lwControlClient, configChanged, s.timeOffsetChanges, stopWorker)
 	})
 
 	// Keep running a worker

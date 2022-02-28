@@ -27,7 +27,7 @@ binaries: $(BINARIES)
 
 $(BINARIES): $(SOURCES)
 	CGO_ENABLED=0 gox \
-		-osarch="linux/amd64 linux/arm darwin/amd64" \
+		-osarch="linux/amd64 linux/arm darwin/amd64 darwin/arm64" \
 		-ldflags="-X main.projectVersion=$(VERSION) -X main.projectBuild=$(COMMIT)" \
 		-output="bin/{{.OS}}/{{.Arch}}/$(BINNAME)" \
 		-tags="netgo" \
@@ -70,7 +70,7 @@ update-modules:
 	go mod edit \
 		-replace github.com/coreos/go-systemd=github.com/coreos/go-systemd@e64a0ec8b42a61e2a9801dc1d0abe539dea79197
 	go get -u \
-		github.com/binkynet/BinkyNet@v0.11.1
+		github.com/binkynet/BinkyNet@v0.14.4
 	go mod tidy
 
 deploy:

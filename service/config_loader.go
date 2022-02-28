@@ -31,6 +31,7 @@ func (s *service) runLoadConfig(ctx context.Context,
 	lwConfigClient api.LocalWorkerConfigServiceClient,
 	lwControlClient api.LocalWorkerControlServiceClient,
 	configChanged chan *api.LocalWorkerConfig,
+	timeOffsetChanged chan int64,
 	stopWorker chan struct{}) error {
 
 	// Prepare log
@@ -64,6 +65,17 @@ func (s *service) runLoadConfig(ctx context.Context,
 			} else {
 				log.Debug().Msg("Received new configuration")
 				lastConf = conf
+				if ut := conf.GetUnixtime(); ut != 0 {
+					timeUnix := time.Now().Unix()
+					offset := ut - timeUnix
+					select {
+					case timeOffsetChanged <- offset:
+						// Continue
+					case <-ctx.Done():
+						// Context canceled
+						return nil
+					}
+				}
 				select {
 				case configChanged <- conf:
 					// Continue

@@ -51,12 +51,14 @@ func main() {
 	var grpcPort int
 	var bridgeType string
 
+	lokiLogger := service.NewLokiLogger()
 	logWriter, err := netlog.NewLogger()
 	if err != nil {
 		Exitf("Failed to create log writer: %s", err)
 	}
 	logOutput := zerolog.MultiLevelWriter(
 		zerolog.ConsoleWriter{Out: os.Stderr},
+		lokiLogger,
 		logWriter,
 	)
 	logger := zerolog.New(logOutput).With().Timestamp().Logger()
@@ -95,8 +97,9 @@ func main() {
 	svc, err := service.NewService(service.Config{
 		ProgramVersion: version,
 	}, service.Dependencies{
-		Logger: logger,
-		Bridge: br,
+		Logger:     logger,
+		Bridge:     br,
+		LokiLogger: lokiLogger,
 	})
 	if err != nil {
 		Exitf("Failed to initialize Service: %v\n", err)
