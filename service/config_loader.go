@@ -38,7 +38,8 @@ func (s *service) runLoadConfig(ctx context.Context,
 
 	loadConfigStream := func(log zerolog.Logger) error {
 		confStream, err := nwControlClient.WatchLocalWorkers(ctx, &api.WatchOptions{
-			ModuleId: s.hostID,
+			WatchRequestChanges: true,
+			ModuleId:            s.hostID,
 		}, grpc_retry.WithMax(3))
 		if err != nil {
 			log.Debug().Err(err).Msg("GetConfig failed.")
