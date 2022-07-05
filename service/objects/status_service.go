@@ -20,11 +20,9 @@ package objects
 import (
 	"context"
 
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	utils "github.com/binkynet/LocalWorker/service/util"
 )
@@ -48,23 +46,16 @@ func newStatusService(log zerolog.Logger) *statusService {
 }
 
 // Run the service until the given context is canceled
-func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorkerControlServiceClient) error {
+func (s *statusService) Run(ctx context.Context, nwControlClient api.NetworkControlServiceClient) error {
 	log := s.log
 	g, ctx := errgroup.WithContext(ctx)
 	// Send output actuals
 	g.Go(func() error {
 		once := func() error {
-			server, err := lwControlClient.SetOutputActuals(ctx, grpc_retry.Disable())
-			if err != nil {
-				return err
-			}
-			defer server.CloseSend()
 			for {
 				select {
 				case msg := <-s.outputActuals:
-					if err := server.Send(&msg); util.IsStreamClosed(err) || ctx.Err() != nil {
-						return nil
-					} else if err != nil {
+					if _, err := nwControlClient.SetOutputActual(ctx, &msg); err != nil {
 						log.Debug().Err(err).Msg("Send(Output) failed")
 						return err
 					}
@@ -78,17 +69,10 @@ func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorker
 	// Send sensor actuals
 	g.Go(func() error {
 		once := func() error {
-			server, err := lwControlClient.SetSensorActuals(ctx, grpc_retry.Disable())
-			if err != nil {
-				return err
-			}
-			defer server.CloseSend()
 			for {
 				select {
 				case msg := <-s.sensorActuals:
-					if err := server.Send(&msg); util.IsStreamClosed(err) || ctx.Err() != nil {
-						return nil
-					} else if err != nil {
+					if _, err := nwControlClient.SetSensorActual(ctx, &msg); err != nil {
 						log.Debug().Err(err).Msg("Send(Sensor) failed")
 						return err
 					}
@@ -102,17 +86,10 @@ func (s *statusService) Run(ctx context.Context, lwControlClient api.LocalWorker
 	// Send switch actuals
 	g.Go(func() error {
 		once := func() error {
-			server, err := lwControlClient.SetSwitchActuals(ctx, grpc_retry.Disable())
-			if err != nil {
-				return err
-			}
-			defer server.CloseSend()
 			for {
 				select {
 				case msg := <-s.switchActuals:
-					if err := server.Send(&msg); util.IsStreamClosed(err) || ctx.Err() != nil {
-						return nil
-					} else if err != nil {
+					if _, err := nwControlClient.SetSwitchActual(ctx, &msg); err != nil {
 						log.Debug().Err(err).Msg("Send(Switch) failed")
 						return err
 					}

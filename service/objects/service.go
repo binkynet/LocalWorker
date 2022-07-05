@@ -40,7 +40,7 @@ type Service interface {
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
-	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
+	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
 }
 
 type service struct {
@@ -141,7 +141,7 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run all required topics until the given context is cancelled.
-func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	defer func() {
 		s.log.Debug().Msg("Run Objects ended")
 	}()
@@ -155,13 +155,13 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 
 		g, ctx := errgroup.WithContext(ctx)
 		// Run requests
-		g.Go(func() error { return requests.Run(ctx, s.moduleID, lwControlClient) })
+		g.Go(func() error { return requests.Run(ctx, s.moduleID, nwControlClient) })
 		// Run statuses
-		g.Go(func() error { return statuses.Run(ctx, lwControlClient) })
+		g.Go(func() error { return statuses.Run(ctx, nwControlClient) })
 		// Keep sending ping messages
-		g.Go(func() error { s.sendPingMessages(ctx, lwControlClient); return nil })
+		g.Go(func() error { s.sendPingMessages(ctx, nwControlClient); return nil })
 		// Receive power messages
-		g.Go(func() error { s.receivePowerMessages(ctx, lwControlClient); return nil })
+		g.Go(func() error { s.receivePowerMessages(ctx, nwControlClient); return nil })
 
 		// Run all objects & object types.
 		visitedTypes := make(map[*ObjectType]struct{})
@@ -204,24 +204,27 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 }
 
 // sendPingMessages keeps sending ping messages until the given context is canceled.
-func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) {
+func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) {
 	log := s.log
 	log.Info().Msg("Sending ping messages")
 	defer func() {
 		log.Info().Msg("Stopped sending ping messages")
 	}()
-	msg := &model.LocalWorkerInfo{
-		Id:          s.moduleID,
-		Description: "Local worker",
-		Version:     s.programVersion,
-		Uptime:      int64(time.Since(s.startTime).Seconds()),
+	msg := model.LocalWorker{
+		Id: s.moduleID,
+		Actual: &model.LocalWorkerInfo{
+			Id:          s.moduleID,
+			Description: "Local worker",
+			Version:     s.programVersion,
+			Uptime:      int64(time.Since(s.startTime).Seconds()),
+		},
 	}
 	for {
 		// Send ping
-		msg.Uptime = int64(time.Since(s.startTime).Seconds())
+		msg.Actual.Uptime = int64(time.Since(s.startTime).Seconds())
 		delay := time.Second * 15
-		if _, err := lwControlClient.Ping(ctx, msg); err != nil && ctx.Err() == nil {
-			log.Info().Err(err).Msg("Failed to send ping message")
+		if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
+			log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
 			delay = time.Second * 5
 		}
 
@@ -238,10 +241,12 @@ func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.Lo
 
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
-func (s *service) receivePowerMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) receivePowerMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	log := s.log
 	once := func() error {
-		stream, err := lwControlClient.GetPowerRequests(ctx, &model.PowerRequestsOptions{})
+		stream, err := nwControlClient.WatchPower(ctx, &model.WatchOptions{
+			WatchRequestChanges: true,
+		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to request power messages")
 			return err
@@ -256,11 +261,11 @@ func (s *service) receivePowerMessages(ctx context.Context, lwControlClient mode
 				return err
 			}
 			// Process power request
-			log.Debug().Bool("enabled", msg.Enabled).Msg("Receiver power request")
+			log.Debug().Bool("enabled", msg.GetRequest().GetEnabled()).Msg("Receiver power request")
 			for _, obj := range s.configuredObjects {
 				// Run the object itself
 				go func(obj Object) {
-					if err := obj.ProcessPowerMessage(ctx, *msg); err != nil {
+					if err := obj.ProcessPowerMessage(ctx, *msg.GetRequest()); err != nil {
 						log.Info().Err(err).Msg("Object failed to process PowerMessage")
 					}
 				}(obj)

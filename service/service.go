@@ -62,11 +62,9 @@ type service struct {
 	workerSem         *semaphore.Weighted
 	startedAt         time.Time
 
-	lwConfigListener  *discovery.ServiceListener
-	lwControlListener *discovery.ServiceListener
+	nwControlListener *discovery.ServiceListener
 	lokiListener      *discovery.ServiceListener
-	lwConfigChanges   chan api.ServiceInfo
-	lwControlChanges  chan api.ServiceInfo
+	nwControlChanges  chan api.ServiceInfo
 	lokiChanges       chan api.ServiceInfo
 	timeOffsetChanges chan int64
 }
@@ -84,16 +82,14 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 		Config:            conf,
 		Dependencies:      deps,
 		hostID:            hostID,
-		lwConfigChanges:   make(chan api.ServiceInfo),
-		lwControlChanges:  make(chan api.ServiceInfo),
+		nwControlChanges:  make(chan api.ServiceInfo),
 		lokiChanges:       make(chan api.ServiceInfo),
 		timeOffsetChanges: make(chan int64),
 		environmentSem:    semaphore.NewWeighted(1),
 		workerSem:         semaphore.NewWeighted(1),
 		startedAt:         time.Now(),
 	}
-	s.lwConfigListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerConfig, true, s.lwConfigChanged)
-	s.lwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLocalWorkerControl, true, s.lwControlChanged)
+	s.nwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeNetworkControl, true, s.nwControlChanged)
 	s.lokiListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLokiProvider, true, s.lokiChanged)
 	return s, nil
 }
@@ -112,12 +108,10 @@ func (s *service) Run(ctx context.Context) error {
 	s.Bridge.BlinkGreenLED(time.Millisecond * 250)
 	s.Bridge.BlinkRedLED(time.Millisecond * 250)
 
-	var lwConfigInfo *api.ServiceInfo
-	var lwControlInfo *api.ServiceInfo
+	var nwControlInfo *api.ServiceInfo
 
 	// Start discovery listeners
-	go s.lwConfigListener.Run(ctx)
-	go s.lwControlListener.Run(ctx)
+	go s.nwControlListener.Run(ctx)
 	go s.lokiListener.Run(ctx)
 	go s.LokiLogger.Run(ctx, log, s.hostID, s.lokiChanges, s.timeOffsetChanges)
 
@@ -127,14 +121,10 @@ func (s *service) Run(ctx context.Context) error {
 		s.Bridge.SetRedLED(false)
 
 		select {
-		case info := <-s.lwConfigChanges:
-			// LocalWorkerConfigService discovery change detected
-			lwConfigInfo = &info
-			log.Debug().Msg("LocalWorkerConfig discovery change received")
-		case info := <-s.lwControlChanges:
-			// LocalWorkerControlService discovery change detected
-			lwControlInfo = &info
-			log.Debug().Msg("LocalWorkerControl discovery change received")
+		case info := <-s.nwControlChanges:
+			// NetworkControlService discovery change detected
+			nwControlInfo = &info
+			log.Debug().Msg("NetworkControl discovery change received")
 		case <-ctx.Done():
 			// Context canceled
 			return nil
@@ -142,43 +132,35 @@ func (s *service) Run(ctx context.Context) error {
 			// Retry
 		}
 
-		// Do we have discovery info for lwConfig & lwControl ?
-		if lwConfigInfo == nil || lwControlInfo == nil {
+		// Do we have discovery info for nwControl ?
+		if nwControlInfo == nil {
 			// Wait for more info
 			continue
 		}
 
-		if err := func(lwConfigInfo *api.ServiceInfo, lwControlInfo *api.ServiceInfo) error {
-			// Dialog connection to lwConfig
-			lwConfigConn, err := grpcutil.DialConn(lwConfigInfo)
+		if err := func(nwControlInfo *api.ServiceInfo) error {
+			// Dialog connection to nwControl
+			nwControlConn, err := grpcutil.DialConn(nwControlInfo)
 			if err != nil {
-				log.Warn().Err(err).Msg("Failed to dial LocalWorkerConfig service")
+				log.Warn().Err(err).Msg("Failed to dial NetworkControl service")
 				return nil
 			}
-			defer lwConfigConn.Close()
-			lwConfigClient := api.NewLocalWorkerConfigServiceClient(lwConfigConn)
-			// Dialog connection to lwControl
-			lwControlConn, err := grpcutil.DialConn(lwControlInfo)
-			if err != nil {
-				log.Warn().Err(err).Msg("Failed to dial LocalWorkerControl service")
-				return nil
-			}
-			defer lwControlConn.Close()
-			lwControlClient := api.NewLocalWorkerControlServiceClient(lwControlConn)
+			defer nwControlConn.Close()
+			nwControlClient := api.NewNetworkControlServiceClient(nwControlConn)
 
 			// Initialization done, run loop
 			workerCtx, workerCancel := context.WithCancel(ctx)
 			s.mutex.Lock()
 			s.workerCancel = workerCancel
 			s.mutex.Unlock()
-			err = s.runWorkerInEnvironment(workerCtx, log, lwConfigClient, lwControlClient)
+			err = s.runWorkerInEnvironment(workerCtx, log, nwControlClient)
 			workerCancel()
 			if err != nil {
 				log.Debug().Err(err).Msg("runWorkerInEnvironment failed")
 				return err
 			}
 			return nil
-		}(lwConfigInfo, lwControlInfo); err != nil {
+		}(nwControlInfo); err != nil {
 			log.Warn().Err(err).Msg("Worker loop failed. Retrying...")
 		}
 
@@ -189,28 +171,16 @@ func (s *service) Run(ctx context.Context) error {
 	}
 }
 
-// LocalWorkerConfigService has changed
-func (s *service) lwConfigChanged(info api.ServiceInfo) {
+// NetworkControlService has changed
+func (s *service) nwControlChanged(info api.ServiceInfo) {
 	s.mutex.Lock()
 	cancel := s.workerCancel
 	s.mutex.Unlock()
 	if cancel != nil {
-		s.Logger.Debug().Msg("lwConfigChanged: canceling worker")
+		s.Logger.Debug().Msg("nwControlChanged: canceling worker")
 		cancel()
 	}
-	s.lwConfigChanges <- info
-}
-
-// LocalWorkerControlService has changed
-func (s *service) lwControlChanged(info api.ServiceInfo) {
-	s.mutex.Lock()
-	cancel := s.workerCancel
-	s.mutex.Unlock()
-	if cancel != nil {
-		s.Logger.Debug().Msg("lwControlChanged: canceling worker")
-		cancel()
-	}
-	s.lwControlChanges <- info
+	s.nwControlChanges <- info
 }
 
 // Loki service has changed
@@ -221,8 +191,7 @@ func (s *service) lokiChanged(info api.ServiceInfo) {
 // Run the worker until the given context is cancelled.
 func (s *service) runWorkerInEnvironment(ctx context.Context,
 	log zerolog.Logger,
-	lwConfigClient api.LocalWorkerConfigServiceClient,
-	lwControlClient api.LocalWorkerControlServiceClient) error {
+	nwControlClient api.NetworkControlServiceClient) error {
 
 	// Prepare logger
 	environmentID := atomic.AddUint32(&s.lastEnvironmentID, 1)
@@ -264,12 +233,12 @@ func (s *service) runWorkerInEnvironment(ctx context.Context,
 
 	// Keep requesting configuration in stream
 	g.Go(func() error {
-		return s.runLoadConfig(ctx, log, lwConfigClient, lwControlClient, configChanged, s.timeOffsetChanges, stopWorker)
+		return s.runLoadConfig(ctx, log, nwControlClient, configChanged, s.timeOffsetChanges, stopWorker)
 	})
 
 	// Keep running a worker
 	g.Go(func() error {
-		return s.runWorkers(ctx, log, lwConfigClient, lwControlClient, configChanged, stopWorker)
+		return s.runWorkers(ctx, log, nwControlClient, configChanged, stopWorker)
 	})
 
 	return g.Wait()

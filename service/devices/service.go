@@ -42,7 +42,7 @@ type Service interface {
 	// Configure is called once to put all devices in the desired state.
 	Configure(ctx context.Context) error
 	// Run the service until the given context is canceled.
-	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
+	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
 	// Close brings all devices back to a safe state.
 	Close() error
 }
@@ -125,9 +125,9 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run the service until the given context is canceled.
-func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return s.receiveDiscoverMessages(ctx, lwControlClient) })
+	//g.Go(func() error { return s.receiveDiscoverMessages(ctx, nwControlClient) })
 	g.Go(func() error { return s.runActiveNotify(ctx) })
 	return g.Wait()
 }

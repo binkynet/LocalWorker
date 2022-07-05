@@ -28,8 +28,7 @@ import (
 // config changes in configChanged channel.
 func (s *service) runLoadConfig(ctx context.Context,
 	log zerolog.Logger,
-	lwConfigClient api.LocalWorkerConfigServiceClient,
-	lwControlClient api.LocalWorkerControlServiceClient,
+	nwControlClient api.NetworkControlServiceClient,
 	configChanged chan *api.LocalWorkerConfig,
 	timeOffsetChanged chan int64,
 	stopWorker chan struct{}) error {
@@ -38,12 +37,8 @@ func (s *service) runLoadConfig(ctx context.Context,
 	log = log.With().Str("component", "config-reader").Logger()
 
 	loadConfigStream := func(log zerolog.Logger) error {
-		uptime := int64(time.Since(s.startedAt).Seconds())
-		confStream, err := lwConfigClient.GetConfig(ctx, &api.LocalWorkerInfo{
-			Id:          s.hostID,
-			Description: "Local worker",
-			Version:     s.ProgramVersion,
-			Uptime:      uptime,
+		confStream, err := nwControlClient.WatchLocalWorkers(ctx, &api.WatchOptions{
+			ModuleId: s.hostID,
 		}, grpc_retry.WithMax(3))
 		if err != nil {
 			log.Debug().Err(err).Msg("GetConfig failed.")
@@ -53,13 +48,14 @@ func (s *service) runLoadConfig(ctx context.Context,
 		var lastConf *api.LocalWorkerConfig
 		for {
 			// Read configuration
-			conf, err := confStream.Recv()
+			lw, err := confStream.Recv()
 			if util.IsStreamClosed(err) || ctx.Err() != nil {
 				return nil
 			} else if err != nil {
 				log.Error().Err(err).Msg("Failed to read configuration")
 				return nil
 			}
+			conf := lw.GetRequest()
 			if conf.Equal(lastConf) {
 				log.Debug().Msg("Received identical configuration")
 			} else {
