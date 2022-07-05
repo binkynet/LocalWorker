@@ -1,7 +1,7 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/binkynet/BinkyNet v0.14.6-0.20220705135121-68d278ee4b55 h1:ZiHviCVgaW3pzi1rpjkGNEDO9DAiXD9VtjuKeNb/AqA=
-github.com/binkynet/BinkyNet v0.14.6-0.20220705135121-68d278ee4b55/go.mod h1:IGWTutjIzojoVPxVXRc1Ts1bAfyGxKw16u+zL4rqS1Q=
+github.com/binkynet/BinkyNet v0.14.6-0.20220705150810-2c1cc06db2b5 h1:hIDEHmSP+r1CP7KzCRPrgU6Y9pLhA1SjdaCgKrUY2Z8=
+github.com/binkynet/BinkyNet v0.14.6-0.20220705150810-2c1cc06db2b5/go.mod h1:IGWTutjIzojoVPxVXRc1Ts1bAfyGxKw16u+zL4rqS1Q=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

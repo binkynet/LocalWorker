@@ -70,7 +70,7 @@ update-modules:
 	go mod edit \
 		-replace github.com/coreos/go-systemd=github.com/coreos/go-systemd@e64a0ec8b42a61e2a9801dc1d0abe539dea79197
 	go get -u \
-		github.com/binkynet/BinkyNet@api
+		github.com/binkynet/BinkyNet@2c1cc06db2b5e9bcb533366efea36298aaabc8ac
 	go mod tidy
 
 deploy:

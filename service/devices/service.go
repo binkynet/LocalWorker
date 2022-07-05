@@ -127,7 +127,7 @@ func (s *service) Configure(ctx context.Context) error {
 // Run the service until the given context is canceled.
 func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	g, ctx := errgroup.WithContext(ctx)
-	//g.Go(func() error { return s.receiveDiscoverMessages(ctx, nwControlClient) })
+	g.Go(func() error { return s.receiveDiscoverMessages(ctx, nwControlClient) })
 	g.Go(func() error { return s.runActiveNotify(ctx) })
 	return g.Wait()
 }
@@ -175,12 +175,12 @@ func (s *service) runActiveNotify(ctx context.Context) error {
 
 // Run subscribed to discover messages and processed them
 // until the given context is cancelled.
-func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) receiveDiscoverMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	log := s.log
 	once := func() error {
 		log.Debug().Msg("Opening GetDiscoverRequests stream...")
-		stream, err := lwControlClient.GetDiscoverRequests(ctx, &model.LocalWorkerInfo{
-			Id: s.hardwareID,
+		stream, err := nwControlClient.WatchDeviceDiscoveries(ctx, &model.WatchOptions{
+			ModuleId: s.hardwareID,
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to request discover messages")
@@ -189,7 +189,7 @@ func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient m
 		defer stream.CloseSend()
 		for {
 			log.Debug().Msg("Waiting to receive discover request...")
-			_, err := stream.Recv()
+			req, err := stream.Recv()
 			if util.IsStreamClosed(err) || ctx.Err() != nil {
 				log.Info().Msg("Stream closed or context canceled")
 				return nil
@@ -208,8 +208,9 @@ func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient m
 				result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
 			}
 			log.Info().Strs("addresses", result.GetAddresses()).Msg("Discovered addresses")
-			if _, err := lwControlClient.SetDiscoverResult(ctx, result); err != nil {
-				log.Warn().Err(err).Msg("SetDiscoverResult failed")
+			req.Actual = result
+			if _, err := nwControlClient.SetDeviceDiscoveryActual(ctx, req); err != nil {
+				log.Warn().Err(err).Msg("SetDeviceDiscoveryActual failed")
 				return err
 			}
 		}
