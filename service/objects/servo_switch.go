@@ -188,7 +188,7 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
+func (o *servoSwitch) Run(ctx context.Context, requests RequestService, actuals *ServiceActuals, moduleID string) error {
 	defer o.log.Debug().Msg("servoSwitch.Run terminated")
 	// Ensure we initialize directly after start
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
@@ -262,7 +262,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 						Direction: currentDirection,
 					},
 				}
-				statuses.PublishSwitchActual(msg)
+				actuals.PublishSwitchActual(msg)
 			}
 		}
 		select {

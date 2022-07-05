@@ -27,7 +27,7 @@ import (
 
 var (
 	switchType = &ObjectType{
-		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
+		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, actuals *ServiceActuals, service Service, moduleID string) error {
 			cancel := requests.RegisterSwitchRequestReceiver(func(msg model.Switch) error {
 				log := log.With().Str("address", string(msg.Address)).Logger()
 				//log.Debug().Msg("got message")

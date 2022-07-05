@@ -16,22 +16,52 @@ package service
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/semaphore"
 
+	"github.com/binkynet/LocalWorker/service/bridge"
+	"github.com/binkynet/LocalWorker/service/objects"
 	"github.com/binkynet/LocalWorker/service/worker"
 )
 
+type workerRunner struct {
+	hostID        string
+	bridge        bridge.API
+	actuals       objects.ServiceActuals
+	lastWorkerID  uint32
+	workerSem     *semaphore.Weighted
+	currentWorker struct {
+		worker.Service
+		mutex sync.RWMutex
+	}
+}
+
+// newWorkerRunner creates a new worker runner
+func newWorkerRunner(hostID string, bridge bridge.API, actuals objects.ServiceActuals) *workerRunner {
+	return &workerRunner{
+		hostID:    hostID,
+		bridge:    bridge,
+		actuals:   actuals,
+		workerSem: semaphore.NewWeighted(1),
+	}
+}
+
+// Gets the current worker (if any)
+func (s *workerRunner) GetWorker() worker.Service {
+	s.currentWorker.mutex.RLock()
+	defer s.currentWorker.mutex.RUnlock()
+	return s.currentWorker.Service
+}
+
 // runWorkers keeps creating and running workers until the given context is cancelled.
-func (s *service) runWorkers(ctx context.Context,
+func (s *workerRunner) runWorkers(ctx context.Context,
 	log zerolog.Logger,
-	lwConfigClient api.LocalWorkerConfigServiceClient,
-	lwControlClient api.LocalWorkerControlServiceClient,
-	configChanged <-chan *api.LocalWorkerConfig,
-	stopWorker <-chan struct{}) error {
+	configChanged <-chan *api.LocalWorkerConfig) error {
 
 	// Keep running a worker
 	log = log.With().Str("component", "worker-runner").Logger()
@@ -51,13 +81,6 @@ func (s *service) runWorkers(ctx context.Context,
 				log.Warn().Msg("Received nil configuration")
 				continue
 			}
-		case <-stopWorker:
-			log.Info().Msg("Stop worker")
-			conf = nil
-			if cancel != nil {
-				cancel()
-			}
-			return nil
 		case <-ctx.Done():
 			// Context canceled
 			if cancel != nil {
@@ -97,21 +120,23 @@ func (s *service) runWorkers(ctx context.Context,
 				}
 
 				// Run the worker
-				s.runWorkerWithConfig(ctx, log, lwConfigClient, lwControlClient, conf, moduleID)
+				s.runWorkerWithConfig(ctx, log, conf, moduleID)
 			}(lctx, log, *conf)
 		}
 	}
 }
 
 // runWorkerWithConfig runs a worker with given config until the given context is cancelled.
-func (s *service) runWorkerWithConfig(ctx context.Context,
+func (s *workerRunner) runWorkerWithConfig(ctx context.Context,
 	log zerolog.Logger,
-	lwConfigClient api.LocalWorkerConfigServiceClient,
-	lwControlClient api.LocalWorkerControlServiceClient,
 	conf api.LocalWorkerConfig,
 	moduleID string) {
 
 	defer func() {
+		s.currentWorker.mutex.Lock()
+		s.currentWorker.Service = nil
+		s.currentWorker.mutex.Unlock()
+
 		if err := recover(); err != nil {
 			log.Error().Interface("err", err).Msg("Recovered from panic")
 		}
@@ -120,12 +145,12 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 		log.Debug().Msg("Creating new worker service")
 		w, err := worker.NewService(worker.Config{
 			LocalWorkerConfig: conf,
-			ProgramVersion:    s.ProgramVersion,
 			HardwareID:        s.hostID,
 			ModuleID:          moduleID,
 		}, worker.Dependencies{
-			Log:    log,
-			Bridge: s.Bridge,
+			Log:     log,
+			Bridge:  s.bridge,
+			Actuals: s.actuals,
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to create worker")
@@ -133,7 +158,10 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 		} else {
 			// Run worker
 			log.Debug().Msg("start to run worker...")
-			if err := w.Run(ctx, lwControlClient); ctx.Err() != nil {
+			s.currentWorker.mutex.Lock()
+			s.currentWorker.Service = w
+			s.currentWorker.mutex.Unlock()
+			if err := w.Run(ctx); ctx.Err() != nil {
 				log.Info().Msg("Worker ended with context cancellation")
 				return
 			} else if err != nil {

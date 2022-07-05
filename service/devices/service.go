@@ -1,4 +1,4 @@
-// Copyright 2020 Ewout Prangsma
+// Copyright 2020-2022 Ewout Prangsma
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,11 +27,9 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 
 	"github.com/binkynet/LocalWorker/service/bridge"
-	utils "github.com/binkynet/LocalWorker/service/util"
 )
 
 // Service contains the API that is exposed by the device service.
@@ -42,15 +40,17 @@ type Service interface {
 	// Configure is called once to put all devices in the desired state.
 	Configure(ctx context.Context) error
 	// Run the service until the given context is canceled.
-	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
+	Run(ctx context.Context) error
+	// Perform device discovery
+	DiscoverDevices(ctx context.Context, req *model.DiscoverDevicesRequest) (*model.DiscoverDevicesResult, error)
 	// Close brings all devices back to a safe state.
 	Close() error
 }
 
 type service struct {
-	hardwareID        string
-	moduleID          string
-	programVersion    string
+	hardwareID string
+	moduleID   string
+	//programVersion    string
 	log               zerolog.Logger
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
@@ -61,11 +61,10 @@ type service struct {
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(hardwareID, moduleID, programVersion string, configs []*model.Device, bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(hardwareID, moduleID string, configs []*model.Device, bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		hardwareID:        hardwareID,
 		moduleID:          moduleID,
-		programVersion:    programVersion,
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
@@ -125,9 +124,8 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run the service until the given context is canceled.
-func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) Run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return s.receiveDiscoverMessages(ctx, lwControlClient) })
 	g.Go(func() error { return s.runActiveNotify(ctx) })
 	return g.Wait()
 }
@@ -173,46 +171,16 @@ func (s *service) runActiveNotify(ctx context.Context) error {
 	}
 }
 
-// Run subscribed to discover messages and processed them
-// until the given context is cancelled.
-func (s *service) receiveDiscoverMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+// Perform device discovery
+func (s *service) DiscoverDevices(ctx context.Context, req *model.DiscoverDevicesRequest) (*model.DiscoverDevicesResult, error) {
 	log := s.log
-	once := func() error {
-		log.Debug().Msg("Opening GetDiscoverRequests stream...")
-		stream, err := lwControlClient.GetDiscoverRequests(ctx, &model.LocalWorkerInfo{
-			Id: s.hardwareID,
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to request discover messages")
-			return err
-		}
-		defer stream.CloseSend()
-		for {
-			log.Debug().Msg("Waiting to receive discover request...")
-			_, err := stream.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				log.Info().Msg("Stream closed or context canceled")
-				return nil
-			} else if err != nil {
-				log.Warn().Err(err).Msg("Recv failed")
-				return err
-			}
-			// Process discover request
-			log.Debug().Msg("Received discover request")
-
-			addrs := s.bus.DetectSlaveAddresses()
-			result := &model.DiscoverResult{
-				Id: s.moduleID,
-			}
-			for _, addr := range addrs {
-				result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
-			}
-			log.Info().Strs("addresses", result.GetAddresses()).Msg("Discovered addresses")
-			if _, err := lwControlClient.SetDiscoverResult(ctx, result); err != nil {
-				log.Warn().Err(err).Msg("SetDiscoverResult failed")
-				return err
-			}
-		}
+	addrs := s.bus.DetectSlaveAddresses()
+	result := &model.DiscoverDevicesResult{
+		Id: s.moduleID,
 	}
-	return utils.UntilCanceled(ctx, log, "receiveDiscoverMessages", once)
+	for _, addr := range addrs {
+		result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
+	}
+	log.Info().Strs("addresses", result.GetAddresses()).Msg("Discovered addresses")
+	return result, nil
 }

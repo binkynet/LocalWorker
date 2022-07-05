@@ -30,7 +30,7 @@ import (
 
 var (
 	trackInverterType = &ObjectType{
-		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
+		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, actuals *ServiceActuals, service Service, moduleID string) error {
 			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
 				// log := log.With().
 				// 	Str("address", string(msg.Address)).
@@ -147,7 +147,7 @@ func (o *trackInverter) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *trackInverter) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
+func (o *trackInverter) Run(ctx context.Context, requests RequestService, actuals *ServiceActuals, moduleID string) error {
 	defer o.log.Debug().Msg("trackInverter.Run terminated")
 	initialized := false
 	for {
@@ -218,7 +218,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 					Value: int32(o.targetState),
 				},
 			}
-			statuses.PublishOutputActual(msg)
+			actuals.PublishOutputActual(msg)
 			// o.log.Debug().Msg("Sent output actual")
 		}
 		select {

@@ -22,19 +22,15 @@ import (
 
 	"github.com/mattn/go-pubsub"
 	"github.com/rs/zerolog"
-	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
-
-	utils "github.com/binkynet/LocalWorker/service/util"
+	model "github.com/binkynet/BinkyNet/apis/v1"
 )
 
 // RequestService is used by object types to receive requests from the network master.
 type requestService struct {
 	log            zerolog.Logger
 	outputRequests *pubsub.PubSub
-	sensorRequests *pubsub.PubSub
 	switchRequests *pubsub.PubSub
 }
 
@@ -47,57 +43,16 @@ func newRequestService(log zerolog.Logger) *requestService {
 	}
 }
 
-// Run the service until the given context is canceled
-func (s *requestService) Run(ctx context.Context, moduleID string, lwControlClient api.LocalWorkerControlServiceClient) error {
-	log := s.log
-	g, ctx := errgroup.WithContext(ctx)
-	// Receive output requests
-	g.Go(func() error {
-		once := func() error {
-			server, err := lwControlClient.GetOutputRequests(ctx, &api.OutputRequestsOptions{
-				ManualConfirm: true,
-				ModuleId:      moduleID,
-			})
-			if err != nil {
-				return err
-			}
-			for {
-				msg, err := server.Recv()
-				if util.IsStreamClosed(err) || ctx.Err() != nil {
-					return nil
-				} else if err != nil {
-					log.Warn().Err(err).Msg("Recv(Output) failed")
-				} else {
-					s.outputRequests.Pub(*msg)
-				}
-			}
-		}
-		return utils.UntilCanceled(ctx, log, "receiveOutputRequests", once)
-	})
-	// Receive switch requests
-	g.Go(func() error {
-		once := func() error {
-			server, err := lwControlClient.GetSwitchRequests(ctx, &api.SwitchRequestsOptions{
-				ManualConfirm: true,
-				ModuleId:      moduleID,
-			})
-			if err != nil {
-				return err
-			}
-			for {
-				msg, err := server.Recv()
-				if util.IsStreamClosed(err) || ctx.Err() != nil {
-					return nil
-				} else if err != nil {
-					log.Warn().Err(err).Msg("Recv(Switch) failed")
-				} else {
-					s.switchRequests.Pub(*msg)
-				}
-			}
-		}
-		return utils.UntilCanceled(ctx, log, "receiveSwitchRequests", once)
-	})
-	return g.Wait()
+// Set the given output state
+func (s *requestService) SetOutput(ctx context.Context, req *model.Output) error {
+	s.outputRequests.Pub(*req)
+	return nil
+}
+
+// Set the given switch state
+func (s *requestService) SetSwitch(ctx context.Context, req *model.Switch) error {
+	s.switchRequests.Pub(*req)
+	return nil
 }
 
 func (s *requestService) RegisterOutputRequestReceiver(cb func(api.Output) error) context.CancelFunc {

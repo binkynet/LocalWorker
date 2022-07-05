@@ -135,7 +135,7 @@ func (o *relaySwitch) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *relaySwitch) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
+func (o *relaySwitch) Run(ctx context.Context, requests RequestService, actuals *ServiceActuals, moduleID string) error {
 	for {
 		o.mutex.Lock()
 		var sendActualNeeded bool
@@ -168,7 +168,7 @@ func (o *relaySwitch) Run(ctx context.Context, requests RequestService, statuses
 					Direction: o.requestedDirection,
 				},
 			}
-			statuses.PublishSwitchActual(msg)
+			actuals.PublishSwitchActual(msg)
 		}
 		select {
 		case <-time.After(time.Millisecond * 10):

@@ -31,7 +31,7 @@ type Object interface {
 	// Configure is called once to put the object in the desired state.
 	Configure(ctx context.Context) error
 	// Run the object until the given context is cancelled.
-	Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error
+	Run(ctx context.Context, requests RequestService, actuals *ServiceActuals, moduleID string) error
 	// ProcessPowerMessage acts upons a given power message.
 	ProcessPowerMessage(ctx context.Context, m api.PowerState) error
 }
@@ -40,7 +40,7 @@ type Object interface {
 // There will be a single instances of a specific ObjecType that is used by all Object instances.
 type ObjectType struct {
 	// Run the object until the given context is cancelled.
-	Run func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error
+	Run func(ctx context.Context, log zerolog.Logger, requests RequestService, actuals *ServiceActuals, service Service, moduleID string) error
 }
 
 // RequestService is used by object types to receive requests from the network master.

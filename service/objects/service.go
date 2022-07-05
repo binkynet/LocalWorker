@@ -19,13 +19,13 @@ package objects
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
 
@@ -40,7 +40,13 @@ type Service interface {
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
-	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
+	Run(ctx context.Context) error
+	// Set the given power state
+	SetPower(ctx context.Context, req *model.PowerState) error
+	// Set the given output state
+	SetOutput(ctx context.Context, req *model.Output) error
+	// Set the given switch state
+	SetSwitch(ctx context.Context, req *model.Switch) error
 }
 
 type service struct {
@@ -48,20 +54,22 @@ type service struct {
 	moduleID          string
 	objects           map[model.ObjectAddress]Object
 	configuredObjects map[model.ObjectAddress]Object
-	programVersion    string
 	log               zerolog.Logger
+	requestService    *requestService
+	actuals           *ServiceActuals
 }
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, programVersion string, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, configs []*model.Object, devService devices.Service, actuals *ServiceActuals, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
 		objects:           make(map[model.ObjectAddress]Object),
 		configuredObjects: make(map[model.ObjectAddress]Object),
-		programVersion:    programVersion,
 		log:               log.With().Str("component", "object-service").Logger(),
+		requestService:    newRequestService(log),
+		actuals:           actuals,
 	}
 	for _, c := range configs {
 		var obj Object
@@ -141,7 +149,7 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run all required topics until the given context is cancelled.
-func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) Run(ctx context.Context) error {
 	defer func() {
 		s.log.Debug().Msg("Run Objects ended")
 	}()
@@ -149,19 +157,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 		s.log.Warn().Msg("no configured objects, just waiting for context to be cancelled")
 		<-ctx.Done()
 	} else {
-		// Create request/status services
-		requests := newRequestService(s.log)
-		statuses := newStatusService(s.log)
-
 		g, ctx := errgroup.WithContext(ctx)
-		// Run requests
-		g.Go(func() error { return requests.Run(ctx, s.moduleID, lwControlClient) })
-		// Run statuses
-		g.Go(func() error { return statuses.Run(ctx, lwControlClient) })
-		// Keep sending ping messages
-		g.Go(func() error { s.sendPingMessages(ctx, lwControlClient); return nil })
-		// Receive power messages
-		g.Go(func() error { s.receivePowerMessages(ctx, lwControlClient); return nil })
 
 		// Run all objects & object types.
 		visitedTypes := make(map[*ObjectType]struct{})
@@ -171,7 +167,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 			obj := obj
 			g.Go(func() error {
 				s.log.Debug().Str("address", string(addr)).Msg("Running object")
-				if err := obj.Run(ctx, requests, statuses, s.moduleID); err != nil {
+				if err := obj.Run(ctx, s.requestService, s.actuals, s.moduleID); err != nil {
 					return err
 				}
 				return nil
@@ -187,7 +183,7 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 				if objType.Run != nil {
 					g.Go(func() error {
 						s.log.Debug().Msg("starting object type")
-						if err := objType.Run(ctx, s.log, requests, statuses, s, s.moduleID); err != nil {
+						if err := objType.Run(ctx, s.log, s.requestService, s.actuals, s, s.moduleID); err != nil {
 							return err
 						}
 						return nil
@@ -203,69 +199,32 @@ func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerCont
 	return nil
 }
 
-// sendPingMessages keeps sending ping messages until the given context is canceled.
-func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) {
+// Set the given power state
+func (s *service) SetPower(ctx context.Context, req *model.PowerState) error {
 	log := s.log
-	log.Info().Msg("Sending ping messages")
-	defer func() {
-		log.Info().Msg("Stopped sending ping messages")
-	}()
-	msg := &model.LocalWorkerInfo{
-		Id:          s.moduleID,
-		Description: "Local worker",
-		Version:     s.programVersion,
-		Uptime:      int64(time.Since(s.startTime).Seconds()),
+	wg := sync.WaitGroup{}
+	var result utils.SyncError
+	for _, obj := range s.configuredObjects {
+		wg.Add(1)
+		// Run the object itself
+		go func(obj Object) {
+			defer wg.Done()
+			if err := obj.ProcessPowerMessage(ctx, *req); err != nil {
+				log.Info().Err(err).Msg("Object failed to process PowerMessage")
+				result.Add(err)
+			}
+		}(obj)
 	}
-	for {
-		// Send ping
-		msg.Uptime = int64(time.Since(s.startTime).Seconds())
-		delay := time.Second * 15
-		if _, err := lwControlClient.Ping(ctx, msg); err != nil && ctx.Err() == nil {
-			log.Info().Err(err).Msg("Failed to send ping message")
-			delay = time.Second * 5
-		}
-
-		// Wait
-		select {
-		case <-time.After(delay):
-			// Continue
-		case <-ctx.Done():
-			// Context canceled
-			return
-		}
-	}
+	wg.Wait()
+	return result.AsError()
 }
 
-// Run subscribes to the intended topic and process incoming messages
-// until the given context is cancelled.
-func (s *service) receivePowerMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
-	log := s.log
-	once := func() error {
-		stream, err := lwControlClient.GetPowerRequests(ctx, &model.PowerRequestsOptions{})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to request power messages")
-			return err
-		}
-		defer stream.CloseSend()
-		for {
-			msg, err := stream.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				return nil
-			} else if err != nil {
-				log.Warn().Err(err).Msg("Recv failed")
-				return err
-			}
-			// Process power request
-			log.Debug().Bool("enabled", msg.Enabled).Msg("Receiver power request")
-			for _, obj := range s.configuredObjects {
-				// Run the object itself
-				go func(obj Object) {
-					if err := obj.ProcessPowerMessage(ctx, *msg); err != nil {
-						log.Info().Err(err).Msg("Object failed to process PowerMessage")
-					}
-				}(obj)
-			}
-		}
-	}
-	return utils.UntilCanceled(ctx, log, "receivePowerMessages", once)
+// Set the given output state
+func (s *service) SetOutput(ctx context.Context, req *model.Output) error {
+	return s.requestService.SetOutput(ctx, req)
+}
+
+// Set the given switch state
+func (s *service) SetSwitch(ctx context.Context, req *model.Switch) error {
+	return s.requestService.SetSwitch(ctx, req)
 }

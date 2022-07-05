@@ -28,7 +28,7 @@ import (
 
 var (
 	binaryOutputType = &ObjectType{
-		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
+		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, actuals *ServiceActuals, service Service, moduleID string) error {
 			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
 				log := log.With().Str("address", string(msg.Address)).Logger()
 				//log.Debug().Msg("got message")
@@ -114,7 +114,7 @@ func (o *binaryOutput) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *binaryOutput) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
+func (o *binaryOutput) Run(ctx context.Context, requests RequestService, actuals *ServiceActuals, moduleID string) error {
 	// Nothing to do here
 	return nil
 }

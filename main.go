@@ -29,6 +29,7 @@ import (
 	"github.com/binkynet/BinkyNet/netlog"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
+	"github.com/binkynet/LocalWorker/server"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
 )
@@ -105,6 +106,14 @@ func main() {
 		Exitf("Failed to initialize Service: %v\n", err)
 	}
 
+	svr, err := server.NewServer(server.Config{
+		Host:     "0.0.0.0",
+		GRPCPort: 4523,
+	}, svc, logger)
+	if err != nil {
+		Exitf("Failed to initialize Server: %v\n", err)
+	}
+
 	// Prepare to shutdown in a controlled manor
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = api.WithServiceInfoHost(ctx, serverHost)
@@ -116,6 +125,7 @@ func main() {
 	fmt.Printf("Starting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return svc.Run(ctx) })
+	g.Go(func() error { return svr.Run(ctx) })
 	if err := g.Wait(); err != nil {
 		Exitf("Service run failed: %#v", err)
 	}

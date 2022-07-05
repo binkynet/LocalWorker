@@ -99,7 +99,7 @@ func (o *binarySensor) Configure(ctx context.Context) error {
 }
 
 // Run the object until the given context is cancelled.
-func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
+func (o *binarySensor) Run(ctx context.Context, requests RequestService, actuals *ServiceActuals, moduleID string) error {
 	lastValue := false
 	changes := 0
 	recentErrors := 0
@@ -136,7 +136,7 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 					},
 				}
 				lastValue = value
-				statuses.PublishSensorActual(actual)
+				actuals.PublishSensorActual(actual)
 				changes++
 				lastSent = time.Now()
 			}
