@@ -57,15 +57,17 @@ func (s *service) runLoadConfig(ctx context.Context,
 				return nil
 			}
 			conf := lw.GetRequest()
-			if conf.GetHash() != lastConfHash {
+			hash := conf.GetHash()
+			if hash == lastConfHash {
 				log.Debug().
-					Str("hash", lastConfHash).
+					Str("hash", hash).
+					Str("lastHash", lastConfHash).
 					Msg("Received identical configuration")
 			} else {
 				log.Debug().
-					Str("hash", conf.GetHash()).
+					Str("hash", hash).
 					Msg("Received new configuration")
-				lastConfHash = conf.GetHash()
+				lastConfHash = hash
 				if ut := conf.GetUnixtime(); ut != 0 {
 					timeUnix := time.Now().Unix()
 					offset := ut - timeUnix

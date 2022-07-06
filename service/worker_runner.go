@@ -81,8 +81,13 @@ func (s *service) runWorkers(ctx context.Context,
 			go func(ctx context.Context, log zerolog.Logger, conf api.LocalWorkerConfig) {
 				// Aqcuire the semaphore
 				log.Debug().Msg("Acquiring worker semaphore...")
-				if err := s.workerSem.Acquire(ctx, 1); err != nil {
+				timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+				defer cancel()
+				if err := s.workerSem.Acquire(timeoutCtx, 1); err != nil {
 					log.Warn().Err(err).Msg("Failed to acquire worker semaphore")
+					if timeoutCtx.Err() != nil {
+						log.Fatal().Msg("Failed to acquire worker semaphore in time. Restarting")
+					}
 					return
 				}
 				// Release semaphore when worker is done.

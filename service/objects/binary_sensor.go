@@ -116,13 +116,16 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 			}
 			recentErrors = 0
 			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
-			if force || lastValue != value || changes == 0 || time.Since(lastSent) > lastSensorSentThreshold {
+			timeoutThreshold := time.Since(lastSent) > lastSensorSentThreshold
+			if force || lastValue != value || changes == 0 || timeoutThreshold {
 				// Send feedback data
 				log = log.With().
 					Bool("value", value).
 					Bool("last_value", lastValue).
 					Logger()
-				log.Debug().Bool("force", force).Msg("change detected")
+				if force || lastValue != value || changes == 0 {
+					log.Debug().Bool("force", force).Msg("change detected")
+				}
 				actual := model.Sensor{
 					Address: o.address,
 					Actual: &model.SensorState{
