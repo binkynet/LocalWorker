@@ -27,7 +27,7 @@ import (
 // Object contains the API supported by all types of objects.
 type Object interface {
 	// Return the type of this object.
-	Type() *ObjectType
+	Type() ObjectType
 	// Configure is called once to put the object in the desired state.
 	Configure(ctx context.Context) error
 	// Run the object until the given context is cancelled.
@@ -38,9 +38,11 @@ type Object interface {
 
 // ObjectType contains the API supported a specific type of object.
 // There will be a single instances of a specific ObjecType that is used by all Object instances.
-type ObjectType struct {
+type ObjectType interface {
+	// Return the name of this object type
+	String() string
 	// Run the object until the given context is cancelled.
-	Run func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error
+	Run(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error
 }
 
 // RequestService is used by object types to receive requests from the network master.

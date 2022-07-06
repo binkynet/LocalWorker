@@ -160,8 +160,8 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 }
 
 // Return the type of this object.
-func (o *servoSwitch) Type() *ObjectType {
-	return switchType
+func (o *servoSwitch) Type() ObjectType {
+	return switchTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -266,10 +266,11 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			}
 		}
 		select {
+		case <-ctx.Done():
+			// Context canceled
+			return nil
 		case <-time.After(time.Millisecond * 50):
 			// Continue
-		case <-ctx.Done():
-			return nil
 		}
 	}
 }

@@ -110,8 +110,8 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 }
 
 // Return the type of this object.
-func (o *relaySwitch) Type() *ObjectType {
-	return switchType
+func (o *relaySwitch) Type() ObjectType {
+	return switchTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -171,8 +171,6 @@ func (o *relaySwitch) Run(ctx context.Context, requests RequestService, statuses
 			statuses.PublishSwitchActual(msg)
 		}
 		select {
-		case <-time.After(time.Millisecond * 10):
-			// Continue
 		case <-ctx.Done():
 			if o.disableAllNeeded {
 				// Do one more loop to disable relays
@@ -180,6 +178,8 @@ func (o *relaySwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				return nil
 			}
+		case <-time.After(time.Millisecond * 10):
+			// Continue
 		}
 	}
 }

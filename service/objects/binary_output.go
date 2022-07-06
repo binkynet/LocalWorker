@@ -22,34 +22,7 @@ import (
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
-)
-
-var (
-	binaryOutputType = &ObjectType{
-		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
-			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
-				log := log.With().Str("address", string(msg.Address)).Logger()
-				//log.Debug().Msg("got message")
-				if obj, isGlobal, found := service.ObjectByAddress(msg.Address); found {
-					if x, ok := obj.(*binaryOutput); ok {
-						if err := x.ProcessMessage(ctx, msg); err != nil {
-							return err
-						}
-					} else {
-						return errors.Errorf("Expected object of type binaryOutput")
-					}
-				} else if !isGlobal {
-					log.Debug().Msg("binary-output object not found")
-				}
-				return nil
-			})
-			defer cancel()
-			<-ctx.Done()
-			return nil
-		},
-	}
 )
 
 type binaryOutput struct {
@@ -99,8 +72,8 @@ func newBinaryOutput(sender string, oid model.ObjectID, address model.ObjectAddr
 }
 
 // Return the type of this object.
-func (o *binaryOutput) Type() *ObjectType {
-	return binaryOutputType
+func (o *binaryOutput) Type() ObjectType {
+	return binaryOutputTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -116,6 +89,7 @@ func (o *binaryOutput) Configure(ctx context.Context) error {
 // Run the object until the given context is cancelled.
 func (o *binaryOutput) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
 	// Nothing to do here
+	<-ctx.Done()
 	return nil
 }
 

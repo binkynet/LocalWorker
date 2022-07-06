@@ -28,8 +28,7 @@ import (
 // runWorkers keeps creating and running workers until the given context is cancelled.
 func (s *service) runWorkers(ctx context.Context,
 	log zerolog.Logger,
-	lwConfigClient api.LocalWorkerConfigServiceClient,
-	lwControlClient api.LocalWorkerControlServiceClient,
+	nwControlClient api.NetworkControlServiceClient,
 	configChanged <-chan *api.LocalWorkerConfig,
 	stopWorker <-chan struct{}) error {
 
@@ -97,7 +96,7 @@ func (s *service) runWorkers(ctx context.Context,
 				}
 
 				// Run the worker
-				s.runWorkerWithConfig(ctx, log, lwConfigClient, lwControlClient, conf, moduleID)
+				s.runWorkerWithConfig(ctx, log, nwControlClient, conf, moduleID)
 			}(lctx, log, *conf)
 		}
 	}
@@ -106,8 +105,7 @@ func (s *service) runWorkers(ctx context.Context,
 // runWorkerWithConfig runs a worker with given config until the given context is cancelled.
 func (s *service) runWorkerWithConfig(ctx context.Context,
 	log zerolog.Logger,
-	lwConfigClient api.LocalWorkerConfigServiceClient,
-	lwControlClient api.LocalWorkerControlServiceClient,
+	nwControlClient api.NetworkControlServiceClient,
 	conf api.LocalWorkerConfig,
 	moduleID string) {
 
@@ -133,11 +131,11 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 		} else {
 			// Run worker
 			log.Debug().Msg("start to run worker...")
-			if err := w.Run(ctx, lwControlClient); ctx.Err() != nil {
+			if err := w.Run(ctx, nwControlClient); ctx.Err() != nil {
 				log.Info().Msg("Worker ended with context cancellation")
 				return
 			} else if err != nil {
-				log.Error().Err(err).Msg("Failed to run worker")
+				log.Error().Err(err).Msg("Worker ended with unknown error")
 			} else {
 				log.Info().Err(err).Msg("Worker ended without context cancellation")
 			}

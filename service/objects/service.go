@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
@@ -40,7 +41,7 @@ type Service interface {
 	// Configure is called once to put all objects in the desired state.
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
-	Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error
+	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
 }
 
 type service struct {
@@ -141,87 +142,126 @@ func (s *service) Configure(ctx context.Context) error {
 }
 
 // Run all required topics until the given context is cancelled.
-func (s *service) Run(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	defer func() {
 		s.log.Debug().Msg("Run Objects ended")
 	}()
+
+	// Do nothing if we do not have configured objects
 	if len(s.configuredObjects) == 0 {
 		s.log.Warn().Msg("no configured objects, just waiting for context to be cancelled")
 		<-ctx.Done()
-	} else {
-		// Create request/status services
-		requests := newRequestService(s.log)
-		statuses := newStatusService(s.log)
+		return nil
+	}
 
-		g, ctx := errgroup.WithContext(ctx)
-		// Run requests
-		g.Go(func() error { return requests.Run(ctx, s.moduleID, lwControlClient) })
-		// Run statuses
-		g.Go(func() error { return statuses.Run(ctx, lwControlClient) })
-		// Keep sending ping messages
-		g.Go(func() error { s.sendPingMessages(ctx, lwControlClient); return nil })
-		// Receive power messages
-		g.Go(func() error { s.receivePowerMessages(ctx, lwControlClient); return nil })
+	// Create request/status services
+	requests := newRequestService(s.log)
+	statuses := newStatusService(s.log)
 
-		// Run all objects & object types.
-		visitedTypes := make(map[*ObjectType]struct{})
-		for addr, obj := range s.configuredObjects {
-			// Run the object itself
-			addr := addr // Bring range variables in scope
-			obj := obj
+	g, ctx := errgroup.WithContext(ctx)
+	// Run requests
+	g.Go(func() error { return requests.Run(ctx, s.moduleID, nwControlClient) })
+	// Run statuses
+	g.Go(func() error { return statuses.Run(ctx, nwControlClient) })
+	// Keep sending ping messages
+	g.Go(func() error { s.sendPingMessages(ctx, nwControlClient); return nil })
+	// Receive power messages
+	g.Go(func() error { s.receivePowerMessages(ctx, nwControlClient); return nil })
+
+	// Run all objects & object types.
+	visitedTypes := make(map[ObjectType]struct{})
+	var runningObjects, runningObjectTypes int32
+	for addr, obj := range s.configuredObjects {
+		// Run the object itself
+		addr := addr // Bring range variables in scope
+		obj := obj
+		g.Go(func() error {
+			atomic.AddInt32(&runningObjects, 1)
+			log := s.log.With().
+				Str("address", string(addr)).
+				Str("objType", obj.Type().String()).
+				Logger()
+			defer func() {
+				atomic.AddInt32(&runningObjects, -1)
+				log.Debug().Msg("Stopped running object")
+			}()
+			log.Debug().Msg("Running object")
+			if err := obj.Run(ctx, requests, statuses, s.moduleID); err != nil {
+				return err
+			}
+			return nil
+		})
+
+		// Run the message loop for the type of object (if not running already)
+		if objType := obj.Type(); objType != nil {
+			if _, found := visitedTypes[objType]; found {
+				// Type already running
+				continue
+			}
+			visitedTypes[objType] = struct{}{}
 			g.Go(func() error {
-				s.log.Debug().Str("address", string(addr)).Msg("Running object")
-				if err := obj.Run(ctx, requests, statuses, s.moduleID); err != nil {
+				atomic.AddInt32(&runningObjectTypes, 1)
+				log := s.log.With().Str("objType", objType.String()).Logger()
+				defer func() {
+					atomic.AddInt32(&runningObjectTypes, -1)
+					log.Debug().Msg("Stopped running object type")
+				}()
+				log.Debug().Msg("Running object type")
+				if err := objType.Run(ctx, log, requests, statuses, s, s.moduleID); err != nil {
 					return err
 				}
 				return nil
 			})
-
-			// Run the message loop for the type of object (if not running already)
-			if objType := obj.Type(); objType != nil {
-				if _, found := visitedTypes[objType]; found {
-					// Type already running
-					continue
-				}
-				visitedTypes[objType] = struct{}{}
-				if objType.Run != nil {
-					g.Go(func() error {
-						s.log.Debug().Msg("starting object type")
-						if err := objType.Run(ctx, s.log, requests, statuses, s, s.moduleID); err != nil {
-							return err
-						}
-						return nil
-					})
-				}
-			}
-		}
-		if err := g.Wait(); err != nil && ctx.Err() == nil {
-			s.log.Warn().Err(err).Msg("Run Objects failed")
-			return err
 		}
 	}
+
+	g.Go(func() error {
+		<-ctx.Done()
+		for {
+			objs := atomic.LoadInt32(&runningObjects)
+			objTypes := atomic.LoadInt32(&runningObjectTypes)
+			if objs == 0 && objTypes == 0 {
+				s.log.Debug().Msg("No more running objects & object types")
+				return nil
+			}
+			s.log.Debug().
+				Int32("running_objects", objs).
+				Int32("running_object_types", objTypes).
+				Msg("Still running objects")
+			time.Sleep(time.Second * 2)
+		}
+	})
+
+	if err := g.Wait(); err != nil && ctx.Err() == nil {
+		s.log.Warn().Err(err).Msg("Run Objects failed")
+		return err
+	}
+
 	return nil
 }
 
 // sendPingMessages keeps sending ping messages until the given context is canceled.
-func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) {
+func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) {
 	log := s.log
 	log.Info().Msg("Sending ping messages")
 	defer func() {
 		log.Info().Msg("Stopped sending ping messages")
 	}()
-	msg := &model.LocalWorkerInfo{
-		Id:          s.moduleID,
-		Description: "Local worker",
-		Version:     s.programVersion,
-		Uptime:      int64(time.Since(s.startTime).Seconds()),
+	msg := model.LocalWorker{
+		Id: s.moduleID,
+		Actual: &model.LocalWorkerInfo{
+			Id:          s.moduleID,
+			Description: "Local worker",
+			Version:     s.programVersion,
+			Uptime:      int64(time.Since(s.startTime).Seconds()),
+		},
 	}
 	for {
 		// Send ping
-		msg.Uptime = int64(time.Since(s.startTime).Seconds())
+		msg.Actual.Uptime = int64(time.Since(s.startTime).Seconds())
 		delay := time.Second * 15
-		if _, err := lwControlClient.Ping(ctx, msg); err != nil && ctx.Err() == nil {
-			log.Info().Err(err).Msg("Failed to send ping message")
+		if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
+			log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
 			delay = time.Second * 5
 		}
 
@@ -238,10 +278,12 @@ func (s *service) sendPingMessages(ctx context.Context, lwControlClient model.Lo
 
 // Run subscribes to the intended topic and process incoming messages
 // until the given context is cancelled.
-func (s *service) receivePowerMessages(ctx context.Context, lwControlClient model.LocalWorkerControlServiceClient) error {
+func (s *service) receivePowerMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
 	log := s.log
 	once := func() error {
-		stream, err := lwControlClient.GetPowerRequests(ctx, &model.PowerRequestsOptions{})
+		stream, err := nwControlClient.WatchPower(ctx, &model.WatchOptions{
+			WatchRequestChanges: true,
+		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to request power messages")
 			return err
@@ -256,11 +298,11 @@ func (s *service) receivePowerMessages(ctx context.Context, lwControlClient mode
 				return err
 			}
 			// Process power request
-			log.Debug().Bool("enabled", msg.Enabled).Msg("Receiver power request")
+			log.Debug().Bool("enabled", msg.GetRequest().GetEnabled()).Msg("Receiver power request")
 			for _, obj := range s.configuredObjects {
 				// Run the object itself
 				go func(obj Object) {
-					if err := obj.ProcessPowerMessage(ctx, *msg); err != nil {
+					if err := obj.ProcessPowerMessage(ctx, *msg.GetRequest()); err != nil {
 						log.Info().Err(err).Msg("Object failed to process PowerMessage")
 					}
 				}(obj)
