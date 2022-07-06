@@ -135,7 +135,7 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 				log.Info().Msg("Worker ended with context cancellation")
 				return
 			} else if err != nil {
-				log.Error().Err(err).Msg("Failed to run worker")
+				log.Error().Err(err).Msg("Worker ended with unknown error")
 			} else {
 				log.Info().Err(err).Msg("Worker ended without context cancellation")
 			}

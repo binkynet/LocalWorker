@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
@@ -145,61 +146,97 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 	defer func() {
 		s.log.Debug().Msg("Run Objects ended")
 	}()
+
+	// Do nothing if we do not have configured objects
 	if len(s.configuredObjects) == 0 {
 		s.log.Warn().Msg("no configured objects, just waiting for context to be cancelled")
 		<-ctx.Done()
-	} else {
-		// Create request/status services
-		requests := newRequestService(s.log)
-		statuses := newStatusService(s.log)
+		return nil
+	}
 
-		g, ctx := errgroup.WithContext(ctx)
-		// Run requests
-		g.Go(func() error { return requests.Run(ctx, s.moduleID, nwControlClient) })
-		// Run statuses
-		g.Go(func() error { return statuses.Run(ctx, nwControlClient) })
-		// Keep sending ping messages
-		g.Go(func() error { s.sendPingMessages(ctx, nwControlClient); return nil })
-		// Receive power messages
-		g.Go(func() error { s.receivePowerMessages(ctx, nwControlClient); return nil })
+	// Create request/status services
+	requests := newRequestService(s.log)
+	statuses := newStatusService(s.log)
 
-		// Run all objects & object types.
-		visitedTypes := make(map[*ObjectType]struct{})
-		for addr, obj := range s.configuredObjects {
-			// Run the object itself
-			addr := addr // Bring range variables in scope
-			obj := obj
+	g, ctx := errgroup.WithContext(ctx)
+	// Run requests
+	g.Go(func() error { return requests.Run(ctx, s.moduleID, nwControlClient) })
+	// Run statuses
+	g.Go(func() error { return statuses.Run(ctx, nwControlClient) })
+	// Keep sending ping messages
+	g.Go(func() error { s.sendPingMessages(ctx, nwControlClient); return nil })
+	// Receive power messages
+	g.Go(func() error { s.receivePowerMessages(ctx, nwControlClient); return nil })
+
+	// Run all objects & object types.
+	visitedTypes := make(map[ObjectType]struct{})
+	var runningObjects, runningObjectTypes int32
+	for addr, obj := range s.configuredObjects {
+		// Run the object itself
+		addr := addr // Bring range variables in scope
+		obj := obj
+		g.Go(func() error {
+			atomic.AddInt32(&runningObjects, 1)
+			log := s.log.With().
+				Str("address", string(addr)).
+				Str("objType", obj.Type().String()).
+				Logger()
+			defer func() {
+				atomic.AddInt32(&runningObjects, -1)
+				log.Debug().Msg("Stopped running object")
+			}()
+			log.Debug().Msg("Running object")
+			if err := obj.Run(ctx, requests, statuses, s.moduleID); err != nil {
+				return err
+			}
+			return nil
+		})
+
+		// Run the message loop for the type of object (if not running already)
+		if objType := obj.Type(); objType != nil {
+			if _, found := visitedTypes[objType]; found {
+				// Type already running
+				continue
+			}
+			visitedTypes[objType] = struct{}{}
 			g.Go(func() error {
-				s.log.Debug().Str("address", string(addr)).Msg("Running object")
-				if err := obj.Run(ctx, requests, statuses, s.moduleID); err != nil {
+				atomic.AddInt32(&runningObjectTypes, 1)
+				log := s.log.With().Str("objType", objType.String()).Logger()
+				defer func() {
+					atomic.AddInt32(&runningObjectTypes, -1)
+					log.Debug().Msg("Stopped running object type")
+				}()
+				log.Debug().Msg("Running object type")
+				if err := objType.Run(ctx, log, requests, statuses, s, s.moduleID); err != nil {
 					return err
 				}
 				return nil
 			})
-
-			// Run the message loop for the type of object (if not running already)
-			if objType := obj.Type(); objType != nil {
-				if _, found := visitedTypes[objType]; found {
-					// Type already running
-					continue
-				}
-				visitedTypes[objType] = struct{}{}
-				if objType.Run != nil {
-					g.Go(func() error {
-						s.log.Debug().Msg("starting object type")
-						if err := objType.Run(ctx, s.log, requests, statuses, s, s.moduleID); err != nil {
-							return err
-						}
-						return nil
-					})
-				}
-			}
-		}
-		if err := g.Wait(); err != nil && ctx.Err() == nil {
-			s.log.Warn().Err(err).Msg("Run Objects failed")
-			return err
 		}
 	}
+
+	g.Go(func() error {
+		<-ctx.Done()
+		for {
+			objs := atomic.LoadInt32(&runningObjects)
+			objTypes := atomic.LoadInt32(&runningObjectTypes)
+			if objs == 0 && objTypes == 0 {
+				s.log.Debug().Msg("No more running objects & object types")
+				return nil
+			}
+			s.log.Debug().
+				Int32("running_objects", objs).
+				Int32("running_object_types", objTypes).
+				Msg("Still running objects")
+			time.Sleep(time.Second * 2)
+		}
+	})
+
+	if err := g.Wait(); err != nil && ctx.Err() == nil {
+		s.log.Warn().Err(err).Msg("Run Objects failed")
+		return err
+	}
+
 	return nil
 }
 

@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"time"
 
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
@@ -104,13 +105,28 @@ func (s *statusService) Run(ctx context.Context, nwControlClient api.NetworkCont
 }
 
 func (s *statusService) PublishOutputActual(msg api.Output) {
-	s.outputActuals <- msg
+	select {
+	case s.outputActuals <- msg:
+		// Done
+	case <-time.After(time.Second * 10):
+		// Timeout
+	}
 }
 
 func (s *statusService) PublishSensorActual(msg api.Sensor) {
-	s.sensorActuals <- msg
+	select {
+	case s.sensorActuals <- msg:
+		// Done
+	case <-time.After(time.Second * 10):
+		// Timeout
+	}
 }
 
 func (s *statusService) PublishSwitchActual(msg api.Switch) {
-	s.switchActuals <- msg
+	select {
+	case s.switchActuals <- msg:
+		// Done
+	case <-time.After(time.Second * 10):
+		// Timeout
+	}
 }

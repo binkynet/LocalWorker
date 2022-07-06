@@ -46,7 +46,7 @@ func (s *service) runLoadConfig(ctx context.Context,
 			return err
 		}
 		defer confStream.CloseSend()
-		var lastConf *api.LocalWorkerConfig
+		var lastConfHash string
 		for {
 			// Read configuration
 			lw, err := confStream.Recv()
@@ -57,11 +57,15 @@ func (s *service) runLoadConfig(ctx context.Context,
 				return nil
 			}
 			conf := lw.GetRequest()
-			if conf.Equal(lastConf) {
-				log.Debug().Msg("Received identical configuration")
+			if conf.GetHash() != lastConfHash {
+				log.Debug().
+					Str("hash", lastConfHash).
+					Msg("Received identical configuration")
 			} else {
-				log.Debug().Msg("Received new configuration")
-				lastConf = conf
+				log.Debug().
+					Str("hash", conf.GetHash()).
+					Msg("Received new configuration")
+				lastConfHash = conf.GetHash()
 				if ut := conf.GetUnixtime(); ut != 0 {
 					timeUnix := time.Now().Unix()
 					offset := ut - timeUnix

@@ -27,12 +27,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var (
-	binarySensorType = &ObjectType{
-		Run: nil,
-	}
-)
-
 const (
 	lastSensorSentThreshold = time.Second * 15
 )
@@ -86,8 +80,8 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 }
 
 // Return the type of this object.
-func (o *binarySensor) Type() *ObjectType {
-	return binarySensorType
+func (o *binarySensor) Type() ObjectType {
+	return binarySensorTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -144,11 +138,11 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 
 		// Wait a bit
 		select {
-		case <-time.After(delay):
-			// Continue
 		case <-ctx.Done():
 			// Context cancelled
 			return nil
+		case <-time.After(delay):
+			// Continue
 		}
 	}
 }

@@ -45,6 +45,7 @@ func UntilCanceled(ctx context.Context, log zerolog.Logger, description string, 
 		select {
 		case <-ctx.Done():
 			// Context canceled
+			log.Info().Msgf("Stopping %s; context canceled", description)
 			return nil
 		case <-time.After(delay):
 			// Continue

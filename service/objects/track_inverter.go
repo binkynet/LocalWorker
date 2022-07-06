@@ -24,38 +24,7 @@ import (
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
-)
-
-var (
-	trackInverterType = &ObjectType{
-		Run: func(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
-			cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
-				// log := log.With().
-				// 	Str("address", string(msg.Address)).
-				// 	Int32("value", msg.GetRequest().GetValue()).
-				// 	Logger()
-				// log.Debug().Msg("got inverter output message")
-				if obj, isGlobal, found := service.ObjectByAddress(msg.Address); found {
-					if x, ok := obj.(*trackInverter); ok {
-						if err := x.ProcessMessage(ctx, msg); err != nil {
-							log.Error().Err(err).Msg("ProcessMessage failed")
-							return err
-						}
-					} else {
-						return errors.Errorf("Expected object of type trackInverter")
-					}
-				} else if !isGlobal {
-					log.Debug().Msg("track-inverter object not found")
-				}
-				return nil
-			})
-			defer cancel()
-			<-ctx.Done()
-			return nil
-		},
-	}
 )
 
 type trackInverter struct {
@@ -123,8 +92,8 @@ func newTrackInverter(sender string, oid model.ObjectID, address model.ObjectAdd
 }
 
 // Return the type of this object.
-func (o *trackInverter) Type() *ObjectType {
-	return trackInverterType
+func (o *trackInverter) Type() ObjectType {
+	return trackInverterTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -222,10 +191,10 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 			// o.log.Debug().Msg("Sent output actual")
 		}
 		select {
-		case <-time.After(delay):
-			// Continue
 		case <-ctx.Done():
 			return nil
+		case <-time.After(delay):
+			// Continue
 		}
 	}
 }

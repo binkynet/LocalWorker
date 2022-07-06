@@ -1,4 +1,4 @@
-// Copyright 2020 Ewout Prangsma
+// Copyright 2021 Ewout Prangsma
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,37 +25,36 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type switchType string
+type trackInverterType string
 
-const switchTypeInstance switchType = "switchType"
+const trackInverterTypeInstance trackInverterType = "trackInverterType"
 
-func (t switchType) String() string {
+func (t trackInverterType) String() string {
 	return string(t)
 }
 
-func (switchType) Run(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
-	cancel := requests.RegisterSwitchRequestReceiver(func(msg model.Switch) error {
-		log := log.With().Str("address", string(msg.Address)).Logger()
-		//log.Debug().Msg("got message")
+func (trackInverterType) Run(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
+	cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
+		// log := log.With().
+		// 	Str("address", string(msg.Address)).
+		// 	Int32("value", msg.GetRequest().GetValue()).
+		// 	Logger()
+		// log.Debug().Msg("got inverter output message")
 		if obj, isGlobal, found := service.ObjectByAddress(msg.Address); found {
-			if x, ok := obj.(switchAPI); ok {
+			if x, ok := obj.(*trackInverter); ok {
 				if err := x.ProcessMessage(ctx, msg); err != nil {
+					log.Error().Err(err).Msg("ProcessMessage failed")
 					return err
 				}
 			} else {
-				return errors.Errorf("Expected object of type switchAPI")
+				return errors.Errorf("Expected object of type trackInverter")
 			}
 		} else if !isGlobal {
-			log.Debug().Msg("object not found")
+			log.Debug().Msg("track-inverter object not found")
 		}
 		return nil
 	})
 	defer cancel()
 	<-ctx.Done()
 	return nil
-}
-
-type switchAPI interface {
-	// ProcessMessage acts upons a given request.
-	ProcessMessage(ctx context.Context, r model.Switch) error
 }
