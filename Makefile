@@ -8,7 +8,7 @@ REPONAME := $(PROJECT)
 REPOPATH := $(ORGPATH)/$(REPONAME)
 BINNAME := bnLocalWorker
 
-SOURCES := $(shell find . -name '*.go')
+SOURCES := $(shell find . -name '*.go') go.mod go.sum
 BINARIES := ./bin/linux/arm/$(BINNAME) ./bin/linux/amd64/$(BINNAME) ./bin/darwin/amd64/$(BINNAME)
 
 .PHONY: all clean bootstrap binaries test
@@ -70,7 +70,7 @@ update-modules:
 	go mod edit \
 		-replace github.com/coreos/go-systemd=github.com/coreos/go-systemd@e64a0ec8b42a61e2a9801dc1d0abe539dea79197
 	go get -u \
-		github.com/binkynet/BinkyNet@2c1cc06db2b5e9bcb533366efea36298aaabc8ac
+		github.com/binkynet/BinkyNet@5e845b6f01d7b4dbf5de1ab27d42d6f49caa0a4b
 	go mod tidy
 
 deploy:
