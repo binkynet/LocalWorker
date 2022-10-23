@@ -49,6 +49,40 @@ func (s *stubI2CBus) WriteByte(val uint8) (err error) {
 	return nil
 }
 
+// Read a 16-bits word to the device
+// S Addr Wr [A] Comm [A] Sr Addr Rd [A] [DataLow] A [DataHigh] NA P
+func (s *stubI2CBus) ReadWordData(reg uint8) (val uint16, err error) {
+	return 0, nil
+}
+
+// Write a 16-bits word to the device
+// S Addr Wr [A] Comm [A] DataLow [A] DataHigh [A] P
+func (s *stubI2CBus) WriteWordData(reg uint8, data uint16) (err error) {
+	return nil
+}
+
+// Read a block of data (without count) to the device
+// S Addr Wr [A] Comm [A] Sr Addr Rd [A] [Data] A [Data] A ... A [Data] NA P
+func (s *stubI2CBus) ReadI2CBlock(reg uint8, data []byte) (err error) {
+	return nil
+}
+
+// Write a block of data (without count) to the device
+// S Addr Wr [A] Comm [A] Data [A] Data [A] ... [A] Data [A] P
+func (s *stubI2CBus) WriteI2CBlock(reg uint8, data []byte) (err error) {
+	return nil
+}
+
+// Read a block of data directly from the device (/dev/...)
+func (s *stubI2CBus) ReadDevice(data []byte) (err error) {
+	return nil
+}
+
+// Write a block of data directly to the device (/dev/...)
+func (s *stubI2CBus) WriteDevice(data []byte) (err error) {
+	return nil
+}
+
 // DetectSlaveAddresses probes the bus to detect available addresses.
 func (s *stubI2CBus) DetectSlaveAddresses() []byte {
 	return nil

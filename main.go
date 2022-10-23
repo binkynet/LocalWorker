@@ -90,6 +90,17 @@ func main() {
 	}
 	logger.Debug().Str("bridge-type", bridgeType).Msg("Created bridge")
 
+	bus, err := br.I2CBus()
+	if err != nil {
+		Exitf("Failed to open I2C bus: %v\n", err)
+	}
+	addrs := bus.DetectSlaveAddresses()
+	addrsStr := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		addrsStr = append(addrsStr, fmt.Sprintf("0x%x", addr))
+	}
+	logger.Debug().Strs("addresses", addrsStr).Msg("Detected I2C addresses")
+
 	version := projectVersion
 	if version == "dev" || version == "" {
 		version = staticProjectVersion

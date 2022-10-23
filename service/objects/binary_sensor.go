@@ -32,15 +32,14 @@ const (
 )
 
 type binarySensor struct {
-	log         zerolog.Logger
-	config      model.Object
-	address     model.ObjectAddress
-	sender      string
-	inputDevice devices.GPIO
-	pin         model.DeviceIndex
-	invert      bool
-	sendNow     int32
-	lastPower   bool
+	log       zerolog.Logger
+	config    model.Object
+	address   model.ObjectAddress
+	sender    string
+	reader    binarySensorReader
+	invert    bool
+	sendNow   int32
+	lastPower bool
 }
 
 // newBinarySensor creates a new binary-sensor object for the given configuration.
@@ -59,23 +58,40 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 	if !ok {
 		return nil, model.InvalidArgument("Device '%s' not found in object '%s'", conn.Pins[0].DeviceId, oid)
 	}
-	gpio, ok := device.(devices.GPIO)
-	if !ok {
-		return nil, model.InvalidArgument("Device '%s' in object '%s' is not a GPIO", conn.Pins[0].DeviceId, oid)
-	}
-	pin := conn.Pins[0].Index
-	if pin < 1 || uint(pin) > gpio.PinCount() {
-		return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, gpio.PinCount())
+	debug := conn.GetBoolConfig(model.ConfigKeyDebug)
+	var reader binarySensorReader
+	if gpio, ok := device.(devices.GPIO); ok {
+		pin := conn.Pins[0].Index
+		if pin < 1 || uint(pin) > gpio.PinCount() {
+			return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, gpio.PinCount())
+		}
+		var err error
+		reader, err = newBinarySensorGPIOReader(gpio, pin)
+		if err != nil {
+			return nil, err
+		}
+	} else if adc, ok := device.(devices.ADC); ok {
+		pin := conn.Pins[0].Index
+		if pin < 1 || uint(pin) > adc.PinCount() {
+			return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, adc.PinCount())
+		}
+		threshold := conn.GetIntConfig(model.ConfigKeyThreshold)
+		var err error
+		reader, err = newBinarySensorADCReader(log, adc, pin, threshold, debug)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, model.InvalidArgument("Device '%s' in object '%s' is not a GPIO or ADC", conn.Pins[0].DeviceId, oid)
 	}
 	invert := conn.GetBoolConfig(model.ConfigKeyInvert)
 	return &binarySensor{
-		log:         log,
-		config:      config,
-		address:     address,
-		sender:      sender,
-		inputDevice: gpio,
-		pin:         pin,
-		invert:      invert,
+		log:     log,
+		config:  config,
+		address: address,
+		sender:  sender,
+		reader:  reader,
+		invert:  invert,
 	}, nil
 }
 
@@ -86,10 +102,7 @@ func (o *binarySensor) Type() ObjectType {
 
 // Configure is called once to put the object in the desired state.
 func (o *binarySensor) Configure(ctx context.Context) error {
-	if err := o.inputDevice.SetDirection(ctx, o.pin, devices.PinDirectionInput); err != nil {
-		return err
-	}
-	return nil
+	return o.reader.Configure(ctx)
 }
 
 // Run the object until the given context is cancelled.
@@ -103,11 +116,11 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 		delay := time.Millisecond * 50
 
 		// Read state
-		value, err := o.inputDevice.Get(ctx, o.pin)
+		value, err := o.reader.Read(ctx)
 		if err != nil {
 			// Try again soon
 			if recentErrors == 0 {
-				log.Info().Err(err).Msg("Get value failed")
+				log.Info().Err(err).Msg("Read value failed")
 			}
 			recentErrors++
 		} else {
