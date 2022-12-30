@@ -122,7 +122,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 	for {
 		delay := time.Millisecond * 5
 		if !initialized || o.targetState != o.currentState {
-			// o.log.Debug().Msg("De-activate inverter")
+			o.log.Debug().Msg("De-activate inverter")
 			delay = time.Millisecond
 			// First deactivate all relays
 			if r := o.relayOutAInA; r != nil {
@@ -132,23 +132,23 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 			}
 			if r := o.relayOutAInB; r != nil {
 				if err := r.deactivateRelay(ctx); err != nil {
-					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutAInA")
+					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutAInB")
 				}
 			}
 			if r := o.relayOutBInA; r != nil {
 				if err := r.deactivateRelay(ctx); err != nil {
-					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutAInA")
+					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutBInA")
 				}
 			}
 			if r := o.relayOutBInB; r != nil {
 				if err := r.deactivateRelay(ctx); err != nil {
-					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutAInA")
+					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutBInB")
 				}
 			}
 
 			// Now set the desired relays
 			if o.targetState == model.TrackInverterStateDefault {
-				// o.log.Debug().Msg("Activate inverter as default")
+				o.log.Debug().Msg("Activate inverter as default")
 				if r := o.relayOutAInA; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
@@ -156,11 +156,11 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 				}
 				if r := o.relayOutBInB; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
-						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
+						o.log.Warn().Err(err).Msg("Failed to activate relayOutBInB")
 					}
 				}
 			} else if o.targetState == model.TrackInverterStateReverse {
-				// o.log.Debug().Msg("Activate inverter as reverse")
+				o.log.Debug().Msg("Activate inverter as reverse")
 				if r := o.relayOutAInB; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
@@ -168,7 +168,7 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 				}
 				if r := o.relayOutBInA; r != nil {
 					if err := r.activateRelay(ctx); err != nil {
-						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
+						o.log.Warn().Err(err).Msg("Failed to activate relayOutBInA")
 					}
 				}
 			}

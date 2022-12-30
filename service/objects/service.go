@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -47,6 +48,7 @@ type Service interface {
 type service struct {
 	startTime         time.Time
 	moduleID          string
+	devService        devices.Service
 	objects           map[model.ObjectAddress]Object
 	configuredObjects map[model.ObjectAddress]Object
 	programVersion    string
@@ -59,6 +61,7 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
+		devService:        devService,
 		objects:           make(map[model.ObjectAddress]Object),
 		configuredObjects: make(map[model.ObjectAddress]Object),
 		programVersion:    programVersion,
@@ -259,6 +262,10 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 	for {
 		// Send ping
 		msg.Actual.Uptime = int64(time.Since(s.startTime).Seconds())
+		msg.Actual.ConfiguredDeviceIds = s.devService.GetConfiguredDeviceIDs()
+		msg.Actual.ConfiguredObjectIds = s.getConfiguredObjectIDs()
+		msg.Actual.UnconfiguredDeviceIds = s.devService.GetUnconfiguredDeviceIDs()
+		msg.Actual.UnconfiguredObjectIds = s.getUnconfiguredObjectIDs()
 		delay := time.Second * 15
 		if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
 			log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
@@ -274,6 +281,30 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 			return
 		}
 	}
+}
+
+// getConfiguredObjectIDs builds a list of all IDs of configured objects
+func (s *service) getConfiguredObjectIDs() []string {
+	confObjs := s.configuredObjects
+	result := make([]string, 0, len(confObjs))
+	for k := range confObjs {
+		result = append(result, string(k))
+	}
+	sort.Strings(result)
+	return result
+}
+
+// getUnconfiguredObjectIDs builds a list of all IDs of unconfigured objects
+func (s *service) getUnconfiguredObjectIDs() []string {
+	allObjs := s.objects
+	result := make([]string, 0, len(allObjs))
+	for id := range allObjs {
+		if _, found := s.configuredObjects[id]; !found {
+			result = append(result, string(id))
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 // Run subscribes to the intended topic and process incoming messages

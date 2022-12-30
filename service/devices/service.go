@@ -20,6 +20,7 @@ package devices
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +46,10 @@ type Service interface {
 	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
 	// Close brings all devices back to a safe state.
 	Close() error
+	// Get a list of configured device IDs
+	GetConfiguredDeviceIDs() []string
+	// Get a list of unconfigured device IDs
+	GetUnconfiguredDeviceIDs() []string
 }
 
 type service struct {
@@ -218,4 +223,28 @@ func (s *service) receiveDiscoverMessages(ctx context.Context, nwControlClient m
 		}
 	}
 	return utils.UntilCanceled(ctx, log, "receiveDiscoverMessages", once)
+}
+
+// Get a list of configured device IDs
+func (s *service) GetConfiguredDeviceIDs() []string {
+	confDevs := s.configuredDevices
+	result := make([]string, 0, len(confDevs))
+	for k := range confDevs {
+		result = append(result, string(k))
+	}
+	sort.Strings(result)
+	return result
+}
+
+// Get a list of unconfigured device IDs
+func (s *service) GetUnconfiguredDeviceIDs() []string {
+	allDevs := s.devices
+	result := make([]string, 0, len(allDevs))
+	for id := range allDevs {
+		if _, found := s.configuredDevices[id]; !found {
+			result = append(result, string(id))
+		}
+	}
+	sort.Strings(result)
+	return result
 }
