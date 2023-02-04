@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/pkg/errors"
 	terminate "github.com/pulcy/go-terminate"
@@ -61,6 +62,7 @@ func main() {
 		lokiLogger,
 		logWriter,
 	)
+	zerolog.TimeFieldFormat = time.RFC3339Nano
 	logger := zerolog.New(logOutput).With().Timestamp().Logger()
 	logger.Info().Msg("Started logger on console & netlog")
 	defaultBridgeType := environment.AutoDetectBridgeType(logger)
