@@ -31,8 +31,8 @@ type PWM interface {
 	// MaxValue returns the maximum valid value for onValue or offValue.
 	MaxValue() int
 	// Set the output at given index (1...) to the given value
-	Set(ctx context.Context, output model.DeviceIndex, onValue, offValue int) error
+	Set(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32) error
 	// Get the output at given index (1...)
 	// Returns onValue,offValue,error
-	Get(ctx context.Context, output model.DeviceIndex) (int, int, error)
+	Get(ctx context.Context, output model.DeviceIndex) (uint32, uint32, error)
 }

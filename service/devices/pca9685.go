@@ -122,7 +122,7 @@ func (d *pca9685) MaxValue() int {
 }
 
 // Set the output at given index (1...) to the given value
-func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, offValue int) error {
+func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -147,7 +147,7 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 }
 
 // Set the output at given index (1...)
-func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (int, int, error) {
+func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (uint32, uint32, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -171,8 +171,8 @@ func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (int, int, 
 	if err != nil {
 		return 0, 0, err
 	}
-	on := int(onLow) | (int(onHigh) << 8)
-	off := int(offLow) | (int(offHigh) << 8)
+	on := uint32(onLow) | (uint32(onHigh) << 8)
+	off := uint32(offLow) | (uint32(offHigh) << 8)
 	return on, off, nil
 }
 

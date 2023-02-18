@@ -99,6 +99,7 @@ func NewService(hardwareID, moduleID, programVersion string, configs []*model.De
 		}
 		s.devices[c.Id] = dev
 	}
+	devicesCreatedTotal.Set(float64(len(s.devices)))
 	return s, nil
 }
 
@@ -128,6 +129,7 @@ func (s *service) Configure(ctx context.Context) error {
 	}
 	s.configuredDevices = configuredDevices
 	log.Info().Int("count", len(configuredDevices)).Msg("Configured devices")
+	devicesConfiguredTotal.Set(float64(len(configuredDevices)))
 	return ae.AsError()
 }
 

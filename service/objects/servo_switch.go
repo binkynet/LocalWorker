@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,15 +43,15 @@ type servoSwitch struct {
 	servo   struct {
 		device        devices.PWM
 		index         model.DeviceIndex
-		straightPL    int
-		offPL         int
+		straightPL    uint32
+		offPL         uint32
 		stepSize      int
 		phaseStraight *phaseRelay
 		phaseOff      *phaseRelay
 	}
 	sendActualNeeded int32
-	currentPL        int
-	targetPL         int
+	currentPL        uint32
+	targetPL         uint32
 }
 
 type phaseRelay struct {
@@ -111,8 +112,8 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	if err != nil {
 		return nil, model.InvalidArgument("%s: (connection %s in object %s)", err.Error(), model.ConnectionNameServo, oid)
 	}
-	straightPL := servoConn.GetIntConfig(model.ConfigKeyServoStraight)
-	offPL := servoConn.GetIntConfig(model.ConfigKeyServoOff)
+	straightPL := uint32(servoConn.GetIntConfig(model.ConfigKeyServoStraight))
+	offPL := uint32(servoConn.GetIntConfig(model.ConfigKeyServoOff))
 	stepSize := maxInt(1, servoConn.GetIntConfig(model.ConfigKeyServoStep))
 	sw := &servoSwitch{
 		log:       log,
@@ -192,8 +193,9 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 	defer o.log.Debug().Msg("servoSwitch.Run terminated")
 	// Ensure we initialize directly after start
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
+	lastSendActual := time.Now()
 	for {
-		targetPL := o.targetPL
+		targetPL := atomic.LoadUint32(&o.targetPL)
 		if targetPL != o.currentPL {
 			// Ensure all phase relays are deactivated
 			if r := o.servo.phaseStraight; r != nil {
@@ -207,18 +209,18 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 				}
 			}
 			// Make current pulse length closer to target pulse length
-			step := minInt(o.servo.stepSize, absInt(targetPL-o.currentPL))
-			var nextPL int
+			step := minInt(o.servo.stepSize, absInt(int(targetPL)-int(o.currentPL)))
+			var nextPL uint32
 			if o.currentPL < targetPL {
-				nextPL = o.currentPL + step
+				nextPL = o.currentPL + uint32(step)
 			} else {
-				nextPL = o.currentPL - step
+				nextPL = o.currentPL - uint32(step)
 			}
 			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL); err != nil {
 				// oops
 				o.log.Debug().
 					Err(err).
-					Int("pulse", nextPL).
+					Uint32("pulse", nextPL).
 					Msg("Set servo failed")
 			} else {
 				o.currentPL = nextPL
@@ -226,7 +228,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 		} else {
 			// Requested position reached
 			targetDirection := model.SwitchDirection_STRAIGHT
-			if o.targetPL == o.servo.offPL {
+			if targetPL == o.servo.offPL {
 				targetDirection = model.SwitchDirection_OFF
 			}
 			currentDirection := model.SwitchDirection_STRAIGHT
@@ -250,9 +252,14 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
 			if sendNeeded {
 				o.log.Debug().
-					Int("pulse", o.currentPL).
+					Uint32("pulse", o.currentPL).
 					Msg("Servo reached state, sending actual")
-
+			} else if time.Since(lastSendActual) > time.Second*5 {
+				// We need to keep sending actual status on regular interval
+				sendNeeded = true
+				lastSendActual = time.Now()
+			}
+			if sendNeeded {
 				msg := model.Switch{
 					Address: o.address,
 					Request: &model.SwitchState{
@@ -278,16 +285,22 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 // ProcessMessage acts upons a given request.
 func (o *servoSwitch) ProcessMessage(ctx context.Context, r model.Switch) error {
 	direction := r.GetRequest().GetDirection()
-	log := o.log.With().Str("direction", direction.String()).Logger()
-	log.Debug().Msg("got servo-switch request")
 
+	var targetPL uint32
 	switch direction {
 	case model.SwitchDirection_STRAIGHT:
-		o.targetPL = o.servo.straightPL
+		targetPL = o.servo.straightPL
 	case model.SwitchDirection_OFF:
-		o.targetPL = o.servo.offPL
+		targetPL = o.servo.offPL
+	default:
+		return fmt.Errorf("unknown switch direction %d", direction)
 	}
-	atomic.StoreInt32(&o.sendActualNeeded, 1)
+	oldTargetPL := atomic.SwapUint32(&o.targetPL, targetPL)
+	if oldTargetPL != targetPL {
+		atomic.StoreInt32(&o.sendActualNeeded, 1)
+		log := o.log.With().Str("direction", direction.String()).Logger()
+		log.Debug().Msg("got new servo-switch request")
+	}
 
 	return nil
 }

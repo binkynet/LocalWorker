@@ -26,6 +26,7 @@ type Config struct {
 	ProgramVersion string
 	ModuleID       string
 	HardwareID     string
+	MetricsPort    int
 }
 
 type Dependencies struct {
@@ -85,7 +86,9 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 
 	// Build objects service
 	log.Debug().Msg("build objects service")
-	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion, s.config.Objects, devService, s.Log.With().Str("component", "worker.objects").Logger())
+	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion,
+		s.config.MetricsPort, s.config.Objects,
+		devService, s.Log.With().Str("component", "worker.objects").Logger())
 	if err != nil {
 		log.Debug().Err(err).Msg("objects.NewService failed")
 		return fmt.Errorf("objects.NewService failed: %w", err)

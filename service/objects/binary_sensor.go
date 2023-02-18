@@ -107,11 +107,18 @@ func (o *binarySensor) Configure(ctx context.Context) error {
 
 // Run the object until the given context is cancelled.
 func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
+	id := string(o.address)
 	lastValue := false
 	changes := 0
 	recentErrors := 0
 	log := o.log
 	lastSent := time.Now()
+	actual := model.Sensor{
+		Address: o.address,
+		Actual: &model.SensorState{
+			Value: 0,
+		},
+	}
 	for {
 		delay := time.Millisecond * 50
 
@@ -130,7 +137,8 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 			recentErrors = 0
 			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
 			timeoutThreshold := time.Since(lastSent) > lastSensorSentThreshold
-			if force || lastValue != value || changes == 0 || timeoutThreshold {
+			valueChanged := lastValue != value
+			if force || valueChanged || changes == 0 || timeoutThreshold {
 				// Send feedback data
 				log = log.With().
 					Bool("value", value).
@@ -139,14 +147,13 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 				if force || lastValue != value || changes == 0 {
 					log.Debug().Bool("force", force).Msg("change detected")
 				}
-				actual := model.Sensor{
-					Address: o.address,
-					Actual: &model.SensorState{
-						Value: boolToInt32(value),
-					},
-				}
 				lastValue = value
+				actual.Actual.Value = boolToInt32(value)
 				statuses.PublishSensorActual(actual)
+				binarySensorActualGauge.WithLabelValues(id).Set(float64(boolToInt32(value)))
+				if valueChanged {
+					binarySensorChangesTotal.WithLabelValues(id).Inc()
+				}
 				changes++
 				lastSent = time.Now()
 			}

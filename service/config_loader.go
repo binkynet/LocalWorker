@@ -79,6 +79,7 @@ func (s *service) runLoadConfig(ctx context.Context,
 						return nil
 					}
 				}
+				configurationChangesTotal.Inc()
 				select {
 				case configChanged <- conf:
 					// Continue

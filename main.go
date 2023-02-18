@@ -30,6 +30,7 @@ import (
 	"github.com/binkynet/BinkyNet/netlog"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
+	"github.com/binkynet/LocalWorker/pkg/server"
 	"github.com/binkynet/LocalWorker/service"
 	"github.com/binkynet/LocalWorker/service/bridge"
 )
@@ -38,6 +39,7 @@ const (
 	projectName          = "BinkyNet Local Worker"
 	staticProjectVersion = "1.4.0"
 	defaultGrpcPort      = 7129
+	defaultHTTPPort      = 7130
 )
 
 var (
@@ -51,11 +53,13 @@ func main() {
 	var serverHost string
 	var grpcPort int
 	var bridgeType string
+	var httpPort int
 
 	lokiLogger := service.NewLokiLogger()
 	logWriter, err := netlog.NewLogger()
 	if err != nil {
-		Exitf("Failed to create log writer: %s", err)
+		defaultLogger := zerolog.New(os.Stdout)
+		Exitf(defaultLogger, "Failed to create log writer: %s", err)
 	}
 	logOutput := zerolog.MultiLevelWriter(
 		zerolog.ConsoleWriter{Out: os.Stderr},
@@ -71,6 +75,7 @@ func main() {
 	pflag.StringVarP(&bridgeType, "bridge", "b", defaultBridgeType, "Type of bridge to use (rpi|opz|stub)")
 	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the GRPC server will listen on")
 	pflag.IntVar(&grpcPort, "port", defaultGrpcPort, "Port the GRPC server will listen on")
+	pflag.IntVar(&httpPort, "http-port", defaultHTTPPort, "Port the HTTP server will listen on")
 	pflag.Parse()
 
 	var br bridge.API
@@ -78,23 +83,23 @@ func main() {
 	case "rpi":
 		br, err = bridge.NewRaspberryPiBridge()
 		if err != nil {
-			Exitf("Failed to initialize Raspberry Pi Bridge: %v\n", err)
+			Exitf(logger, "Failed to initialize Raspberry Pi Bridge: %v\n", err)
 		}
 	case "opz":
 		br, err = bridge.NewOrangePIZeroBridge()
 		if err != nil {
-			Exitf("Failed to initialize Orange Pi Zero Bridge: %v\n", err)
+			Exitf(logger, "Failed to initialize Orange Pi Zero Bridge: %v\n", err)
 		}
 	case "stub":
 		br = bridge.NewStub()
 	default:
-		Exitf("Unknown bridge type '%s' (rpi|opz|stub)\n", bridgeType)
+		Exitf(logger, "Unknown bridge type '%s' (rpi|opz|stub)\n", bridgeType)
 	}
 	logger.Debug().Str("bridge-type", bridgeType).Msg("Created bridge")
 
 	bus, err := br.I2CBus()
 	if err != nil {
-		Exitf("Failed to open I2C bus: %v\n", err)
+		Exitf(logger, "Failed to open I2C bus: %v\n", err)
 	}
 	addrs := bus.DetectSlaveAddresses()
 	addrsStr := make([]string, 0, len(addrs))
@@ -109,13 +114,21 @@ func main() {
 	}
 	svc, err := service.NewService(service.Config{
 		ProgramVersion: version,
+		MetricsPort:    httpPort,
 	}, service.Dependencies{
 		Logger:     logger,
 		Bridge:     br,
 		LokiLogger: lokiLogger,
 	})
 	if err != nil {
-		Exitf("Failed to initialize Service: %v\n", err)
+		Exitf(logger, "Failed to initialize Service: %v\n", err)
+	}
+	srv, err := server.New(server.Config{
+		Host:     serverHost,
+		HTTPPort: httpPort,
+	}, logger)
+	if err != nil {
+		Exitf(logger, "Failed to initialize Server: %v\n", err)
 	}
 
 	// Prepare to shutdown in a controlled manor
@@ -129,13 +142,20 @@ func main() {
 	fmt.Printf("Starting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return svc.Run(ctx) })
+	g.Go(func() error { return srv.Run(ctx) })
 	if err := g.Wait(); err != nil {
-		Exitf("Service run failed: %#v", err)
+		Exitf(logger, "Service run failed: %#v", err)
 	}
+	fmt.Printf("Exiting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)
 }
 
 // Print the given error message and exit with code 1
-func Exitf(message string, args ...interface{}) {
+func Exitf(log zerolog.Logger, message string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, message, args...)
+	// Sleep before exit to allow logs to be send
+	log.Warn().Msg("About to exit process")
+	time.Sleep(time.Second * 5)
+	// Do actual exit
+	log.Warn().Msg("Exiting process")
 	os.Exit(1)
 }

@@ -78,7 +78,8 @@ func (s *service) runWorkers(ctx context.Context,
 				Str("module-id", moduleID).
 				Uint32("worker-id", workerID).
 				Logger()
-			go func(ctx context.Context, log zerolog.Logger, conf api.LocalWorkerConfig) {
+			workerCountTotal.Inc()
+			go func(ctx context.Context, log zerolog.Logger, conf api.LocalWorkerConfig, workerID uint32) {
 				// Aqcuire the semaphore
 				log.Debug().Msg("Acquiring worker semaphore...")
 				timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -101,8 +102,9 @@ func (s *service) runWorkers(ctx context.Context,
 				}
 
 				// Run the worker
+				currentWorkerIDGauge.Set(float64(workerID))
 				s.runWorkerWithConfig(ctx, log, nwControlClient, conf, moduleID)
-			}(lctx, log, *conf)
+			}(lctx, log, *conf, workerID)
 		}
 	}
 }
@@ -126,6 +128,7 @@ func (s *service) runWorkerWithConfig(ctx context.Context,
 			ProgramVersion:    s.ProgramVersion,
 			HardwareID:        s.hostID,
 			ModuleID:          moduleID,
+			MetricsPort:       s.MetricsPort,
 		}, worker.Dependencies{
 			Log:    log,
 			Bridge: s.Bridge,

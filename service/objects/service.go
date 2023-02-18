@@ -52,12 +52,18 @@ type service struct {
 	objects           map[model.ObjectAddress]Object
 	configuredObjects map[model.ObjectAddress]Object
 	programVersion    string
+	metricsPort       int
 	log               zerolog.Logger
 }
 
+const (
+	// How often do we want to log sending ping messages
+	pingLogInterval = time.Minute
+)
+
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, programVersion string, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, programVersion string, metricsPort int, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
@@ -65,6 +71,7 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 		objects:           make(map[model.ObjectAddress]Object),
 		configuredObjects: make(map[model.ObjectAddress]Object),
 		programVersion:    programVersion,
+		metricsPort:       metricsPort,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for _, c := range configs {
@@ -99,6 +106,7 @@ func NewService(moduleID string, programVersion string, configs []*model.Object,
 		}
 	}
 	log.Debug().Msgf("created %d objects", len(s.objects))
+	objectsCreatedTotal.Set(float64(len(s.objects)))
 	return s, nil
 }
 
@@ -141,6 +149,7 @@ func (s *service) Configure(ctx context.Context) error {
 		}
 	}
 	s.configuredObjects = configuredObjects
+	objectsConfiguredTotal.Set(float64(len(configuredObjects)))
 	return ae.AsError()
 }
 
@@ -253,12 +262,15 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 	msg := model.LocalWorker{
 		Id: s.moduleID,
 		Actual: &model.LocalWorkerInfo{
-			Id:          s.moduleID,
-			Description: "Local worker",
-			Version:     s.programVersion,
-			Uptime:      int64(time.Since(s.startTime).Seconds()),
+			Id:            s.moduleID,
+			Description:   "Local worker",
+			Version:       s.programVersion,
+			Uptime:        int64(time.Since(s.startTime).Seconds()),
+			MetricsPort:   int32(s.metricsPort),
+			MetricsSecure: false,
 		},
 	}
+	lastPingLog := time.Now()
 	for {
 		// Send ping
 		msg.Actual.Uptime = int64(time.Since(s.startTime).Seconds())
@@ -270,6 +282,11 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 		if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
 			log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
 			delay = time.Second * 5
+		} else {
+			if time.Since(lastPingLog) > pingLogInterval {
+				log.Debug().Msg("Ping sent")
+				lastPingLog = time.Now()
+			}
 		}
 
 		// Wait

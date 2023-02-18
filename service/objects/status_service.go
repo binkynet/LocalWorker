@@ -36,6 +36,10 @@ type statusService struct {
 	switchActuals chan api.Switch
 }
 
+const (
+	setActualTimeout = time.Second * 5
+)
+
 // newStatusService creates a new StatusService.
 func newStatusService(log zerolog.Logger) *statusService {
 	return &statusService{
@@ -56,7 +60,10 @@ func (s *statusService) Run(ctx context.Context, nwControlClient api.NetworkCont
 			for {
 				select {
 				case msg := <-s.outputActuals:
-					if _, err := nwControlClient.SetOutputActual(ctx, &msg); err != nil {
+					lctx, cancel := context.WithTimeout(ctx, setActualTimeout)
+					_, err := nwControlClient.SetOutputActual(lctx, &msg)
+					cancel()
+					if err != nil {
 						log.Debug().Err(err).Msg("Send(Output) failed")
 						return err
 					}
@@ -73,7 +80,10 @@ func (s *statusService) Run(ctx context.Context, nwControlClient api.NetworkCont
 			for {
 				select {
 				case msg := <-s.sensorActuals:
-					if _, err := nwControlClient.SetSensorActual(ctx, &msg); err != nil {
+					lctx, cancel := context.WithTimeout(ctx, setActualTimeout)
+					_, err := nwControlClient.SetSensorActual(lctx, &msg)
+					cancel()
+					if err != nil {
 						log.Debug().Err(err).Msg("Send(Sensor) failed")
 						return err
 					}
@@ -90,7 +100,10 @@ func (s *statusService) Run(ctx context.Context, nwControlClient api.NetworkCont
 			for {
 				select {
 				case msg := <-s.switchActuals:
-					if _, err := nwControlClient.SetSwitchActual(ctx, &msg); err != nil {
+					lctx, cancel := context.WithTimeout(ctx, setActualTimeout)
+					_, err := nwControlClient.SetSwitchActual(lctx, &msg)
+					cancel()
+					if err != nil {
 						log.Debug().Err(err).Msg("Send(Switch) failed")
 						return err
 					}
@@ -110,6 +123,10 @@ func (s *statusService) PublishOutputActual(msg api.Output) {
 		// Done
 	case <-time.After(time.Second * 10):
 		// Timeout
+		s.log.Warn().
+			Str("address", string(msg.GetAddress())).
+			Int32("value", int32(msg.GetActual().GetValue())).
+			Msg("Timeout in publishing output actual")
 	}
 }
 
@@ -119,6 +136,10 @@ func (s *statusService) PublishSensorActual(msg api.Sensor) {
 		// Done
 	case <-time.After(time.Second * 10):
 		// Timeout
+		s.log.Warn().
+			Str("address", string(msg.GetAddress())).
+			Int32("value", msg.GetActual().GetValue()).
+			Msg("Timeout in publishing sensor actual")
 	}
 }
 
@@ -128,5 +149,9 @@ func (s *statusService) PublishSwitchActual(msg api.Switch) {
 		// Done
 	case <-time.After(time.Second * 10):
 		// Timeout
+		s.log.Warn().
+			Str("address", string(msg.GetAddress())).
+			Int32("value", int32(msg.GetActual().GetDirection())).
+			Msg("Timeout in publishing switching actual")
 	}
 }

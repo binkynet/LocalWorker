@@ -40,6 +40,7 @@ type Service interface {
 
 type Config struct {
 	ProgramVersion string
+	MetricsPort    int
 }
 
 type Dependencies struct {
@@ -173,6 +174,7 @@ func (s *service) Run(ctx context.Context) error {
 
 // NetworkControlService has changed
 func (s *service) nwControlChanged(info api.ServiceInfo) {
+	networkControlServiceChangesTotal.Inc()
 	s.mutex.Lock()
 	cancel := s.workerCancel
 	s.mutex.Unlock()
@@ -185,6 +187,7 @@ func (s *service) nwControlChanged(info api.ServiceInfo) {
 
 // Loki service has changed
 func (s *service) lokiChanged(info api.ServiceInfo) {
+	lokiServiceChangesTotal.Inc()
 	s.lokiChanges <- info
 }
 
@@ -210,6 +213,9 @@ func (s *service) runWorkerInEnvironment(ctx context.Context,
 		return err
 	}
 
+	// Set metrics
+	currentEnvironmentIDGauge.Set(float64(environmentID))
+
 	// Initialization done, run loop
 	s.Bridge.SetGreenLED(true)
 	s.Bridge.SetRedLED(false)
@@ -221,6 +227,11 @@ func (s *service) runWorkerInEnvironment(ctx context.Context,
 			if err := environment.Reboot(log); err != nil {
 				log.Error().Err(err).Msg("Reboot failed")
 			}
+			// Sleep before exit to allow logs to be send
+			log.Warn().Msg("About to exit process")
+			time.Sleep(time.Second * 5)
+			// Do actual exit
+			log.Warn().Msg("Exiting process")
 			os.Exit(1)
 		}
 	}()

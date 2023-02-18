@@ -36,7 +36,7 @@ $(BINARIES): $(SOURCES)
 test:
 	go test ./...
 
-deployment: ./bin/uInitrd
+deployment: ./bin/uInitrd ./bin/boot.scr.uimg
 
 ./bin/linux/arm/uroot.cpio: ./bin/linux/arm/$(BINNAME)
 	docker run -t --rm \
@@ -62,6 +62,16 @@ deployment: ./bin/uInitrd
 			-d /project/bin/linux/arm/uroot.cpio \
 			/project/bin/uInitrd
 
+./bin/boot.scr.uimg: ./boot/boot.cmd
+	docker run -t --rm \
+		-v $(ROOTDIR):/project \
+		mkimage-builder \
+		mkimage \
+			-C none \
+			-A arm \
+			-T script \
+			-d /project/boot/boot.cmd \
+			/project/bin/boot.scr.uimg
 
 .PHONY: update-modules
 update-modules:
@@ -70,11 +80,12 @@ update-modules:
 	go mod edit \
 		-replace github.com/coreos/go-systemd=github.com/coreos/go-systemd@e64a0ec8b42a61e2a9801dc1d0abe539dea79197
 	go get -u \
-		github.com/binkynet/BinkyNet@v1.3.6
+		github.com/binkynet/BinkyNet@v1.4.1
 	go mod tidy
 
 deploy:
 	scp bin/uInitrd pi@192.168.77.1:/home/pi/tftp/
+	scp bin/boot.scr.uimg pi@192.168.77.1:/home/pi/tftp/
 
 deploy-local:
 	scp bin/linux/arm/bnLocalWorker ewout@192.168.140.168:/home/ewout/
