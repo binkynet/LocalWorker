@@ -23,14 +23,14 @@ import (
 	"sync"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/LocalWorker/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
 )
 
 type pca9685 struct {
 	mutex    sync.Mutex
 	onActive func()
 	config   model.Device
-	dev      bridge.I2CDevice
+	bus      bridge.I2CBus
 	address  byte
 }
 
@@ -55,14 +55,10 @@ func newPCA9685(config model.Device, bus bridge.I2CBus, onActive func()) (PWM, e
 	if err != nil {
 		return nil, err
 	}
-	dev, err := bus.OpenDevice(uint8(address))
-	if err != nil {
-		return nil, err
-	}
 	return &pca9685{
 		onActive: onActive,
 		config:   config,
-		dev:      dev,
+		bus:      bus,
 		address:  byte(address),
 	}, nil
 }
@@ -82,30 +78,37 @@ func (d *pca9685) Configure(ctx context.Context) error {
 
 	// Set MODE1: SLEEP=1, ALLCALL=1
 	d.onActive()
-	mode1 := uint8(0x11)
-	if err := d.dev.WriteByteReg(pca9685MODE1Reg, mode1); err != nil {
-		return err
-	}
-	if err := d.dev.WriteByteReg(pca9685PRESCALEReg, prescale); err != nil {
-		return err
-	}
-	// Set MODE1: SLEEP=0, ALLCALL=1
-	mode1 = uint8(0x01)
-	if err := d.dev.WriteByteReg(pca9685MODE1Reg, mode1); err != nil {
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		mode1 := uint8(0x11)
+		if err := dev.WriteByteReg(pca9685MODE1Reg, mode1); err != nil {
+			return err
+		}
+		if err := dev.WriteByteReg(pca9685PRESCALEReg, prescale); err != nil {
+			return err
+		}
+		// Set MODE1: SLEEP=0, ALLCALL=1
+		mode1 = uint8(0x01)
+		if err := dev.WriteByteReg(pca9685MODE1Reg, mode1); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
 }
 
 // Close brings the device back to a safe state.
-func (d *pca9685) Close() error {
+func (d *pca9685) Close(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
 	// Set MODE1: SLEEP=1, ALLCALL=1
 	mode1 := uint8(0x11)
 	d.onActive()
-	if err := d.dev.WriteByteReg(pca9685MODE1Reg, mode1); err != nil {
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		return dev.WriteByteReg(pca9685MODE1Reg, mode1)
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -131,16 +134,21 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 		return err
 	}
 	d.onActive()
-	if err := d.dev.WriteByteReg(uint8(regBase+pca9685OnLowRegOfs), uint8(onValue&0xFF)); err != nil {
-		return err
-	}
-	if err := d.dev.WriteByteReg(uint8(regBase+pca9685OnHighRegOfs), uint8((onValue>>8)&0xFF)); err != nil {
-		return err
-	}
-	if err := d.dev.WriteByteReg(uint8(regBase+pca9685OffLowRegOfs), uint8(offValue&0xFF)); err != nil {
-		return err
-	}
-	if err := d.dev.WriteByteReg(uint8(regBase+pca9685OffHighRegOfs), uint8((offValue>>8)&0xFF)); err != nil {
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OnLowRegOfs), uint8(onValue&0xFF)); err != nil {
+			return err
+		}
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OnHighRegOfs), uint8((onValue>>8)&0xFF)); err != nil {
+			return err
+		}
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OffLowRegOfs), uint8(offValue&0xFF)); err != nil {
+			return err
+		}
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OffHighRegOfs), uint8((offValue>>8)&0xFF)); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -155,24 +163,30 @@ func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (uint32, ui
 	if err != nil {
 		return 0, 0, err
 	}
-	onLow, err := d.dev.ReadByteReg(uint8(regBase + pca9685OnLowRegOfs))
-	if err != nil {
+	var on, off uint32
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		onLow, err := dev.ReadByteReg(uint8(regBase + pca9685OnLowRegOfs))
+		if err != nil {
+			return err
+		}
+		onHigh, err := dev.ReadByteReg(uint8(regBase + pca9685OnHighRegOfs))
+		if err != nil {
+			return err
+		}
+		offLow, err := dev.ReadByteReg(uint8(regBase + pca9685OffLowRegOfs))
+		if err != nil {
+			return err
+		}
+		offHigh, err := dev.ReadByteReg(uint8(regBase + pca9685OffHighRegOfs))
+		if err != nil {
+			return err
+		}
+		on = uint32(onLow) | (uint32(onHigh) << 8)
+		off = uint32(offLow) | (uint32(offHigh) << 8)
+		return nil
+	}); err != nil {
 		return 0, 0, err
 	}
-	onHigh, err := d.dev.ReadByteReg(uint8(regBase + pca9685OnHighRegOfs))
-	if err != nil {
-		return 0, 0, err
-	}
-	offLow, err := d.dev.ReadByteReg(uint8(regBase + pca9685OffLowRegOfs))
-	if err != nil {
-		return 0, 0, err
-	}
-	offHigh, err := d.dev.ReadByteReg(uint8(regBase + pca9685OffHighRegOfs))
-	if err != nil {
-		return 0, 0, err
-	}
-	on := uint32(onLow) | (uint32(onHigh) << 8)
-	off := uint32(offLow) | (uint32(offHigh) << 8)
 	return on, off, nil
 }
 

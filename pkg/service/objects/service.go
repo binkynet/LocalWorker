@@ -29,9 +29,8 @@ import (
 
 	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/LocalWorker/service/devices"
-
-	utils "github.com/binkynet/LocalWorker/service/util"
+	"github.com/binkynet/LocalWorker/pkg/service/devices"
+	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 // Service contains the API that is exposed by the object service.

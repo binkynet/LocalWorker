@@ -18,15 +18,17 @@
 package bridge
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 )
 
 type I2CBus interface {
-	// Open a connection to a device at the given address.
-	OpenDevice(address uint8) (I2CDevice, error)
+	// Execute an option on the bus.
+	Execute(ctx context.Context, address uint8, op func(ctx context.Context, dev I2CDevice) error) error
 	// DetectSlaveAddresses probes the bus to detect available addresses.
 	DetectSlaveAddresses() []byte
 	// Close the bus and all devices on it
@@ -35,7 +37,6 @@ type I2CBus interface {
 
 // I2CDevice communicates with a device on the I2C Bus that has a specific address.
 type I2CDevice interface {
-	Close() error
 	// Read a byte from given register
 	ReadByteReg(reg uint8) (uint8, error)
 	// Write a byte to given register
@@ -77,11 +78,39 @@ func NewI2CBus(location string) (I2CBus, error) {
 	return b, nil
 }
 
-// Open a connection to a device at the given address.
-func (b *i2cBus) OpenDevice(address uint8) (I2CDevice, error) {
+// Execute an option on the bus.
+func (b *i2cBus) Execute(ctx context.Context, address uint8, op func(context.Context, I2CDevice) error) error {
+	i2cExecuteCounters.WithLabelValues(strconv.Itoa(int(address))).Inc()
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		// Open device
+		var dev *i2cDevice
+		dev, err = b.openDevice(address)
+		if err != nil {
+			return fmt.Errorf("openDevice(%d) failed: %w", address, err)
+		}
+
+		// Execute operation
+		err = op(ctx, dev)
+		if err == nil {
+			// Success
+			return nil
+		}
+
+		// Close dev
+		dev.closeFile()
+		delete(b.devices, address)
+	}
+	// Return error
+	i2cExecuteErrorCounters.WithLabelValues(strconv.Itoa(int(address))).Inc()
+	return fmt.Errorf("execute operation in i2c bus failed: %w", err)
+}
+
+// Open a connection to a device at the given address.
+func (b *i2cBus) openDevice(address uint8) (*i2cDevice, error) {
 	// Did we already open the device?
 	if d, found := b.devices[address]; found {
 		return d, nil
@@ -99,22 +128,6 @@ func (b *i2cBus) OpenDevice(address uint8) (I2CDevice, error) {
 	return d, nil
 }
 
-// Open a connection to a device at the given address.
-func (b *i2cBus) closeDevice(address uint8) error {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
-	// Do we know the device?
-	if _, found := b.devices[address]; !found {
-		return fmt.Errorf("No such device")
-	}
-
-	// Unregister
-	delete(b.devices, address)
-
-	return nil
-}
-
 // DetectSlaveAddresses probes the bus to detect available addresses.
 func (b *i2cBus) DetectSlaveAddresses() []byte {
 	var result []byte
@@ -123,7 +136,7 @@ func (b *i2cBus) DetectSlaveAddresses() []byte {
 			if err := d.DetectDevice(); err == nil {
 				result = append(result, addr)
 			}
-			d.Close()
+			d.closeFile()
 		}
 	}
 	return result
@@ -142,9 +155,10 @@ func (b *i2cBus) Close() error {
 	// Close all collected devices
 	var ae aerr.AggregateError
 	for _, d := range devices {
-		if err := d.Close(); err != nil {
+		if err := d.closeFile(); err != nil {
 			ae.Add(err)
 		}
+		delete(b.devices, d.address)
 	}
 
 	return ae.AsError()

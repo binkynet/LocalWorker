@@ -19,7 +19,7 @@ package objects
 
 import (
 	model "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/LocalWorker/service/devices"
+	"github.com/binkynet/LocalWorker/pkg/service/devices"
 )
 
 // getSinglePin looks up the pin with given name in the given configurable.

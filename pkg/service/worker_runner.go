@@ -22,7 +22,7 @@ import (
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/rs/zerolog"
 
-	"github.com/binkynet/LocalWorker/service/worker"
+	"github.com/binkynet/LocalWorker/pkg/service/worker"
 )
 
 // runWorkers keeps creating and running workers until the given context is cancelled.

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/LocalWorker/service/devices"
+	"github.com/binkynet/LocalWorker/pkg/service/devices"
 	"github.com/rs/zerolog"
 )
 
@@ -127,36 +127,42 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 		if err != nil {
 			// Try again soon
 			if recentErrors == 0 {
-				log.Info().Err(err).Msg("Read value failed")
+				log.Error().Err(err).Msg("Read value failed")
 			}
 			recentErrors++
+			// Make sensor active to avoid trains running wild
+			value = true
+			// Update metrics
+			binarySensorReadErrorsTotal.WithLabelValues(id).Inc()
 		} else {
+			// Read succeeded, invert if needed
 			if o.invert {
 				value = !value
 			}
+			// Reset reset error count
 			recentErrors = 0
-			force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
-			timeoutThreshold := time.Since(lastSent) > lastSensorSentThreshold
-			valueChanged := lastValue != value
-			if force || valueChanged || changes == 0 || timeoutThreshold {
-				// Send feedback data
-				log = log.With().
-					Bool("value", value).
-					Bool("last_value", lastValue).
-					Logger()
-				if force || lastValue != value || changes == 0 {
-					log.Debug().Bool("force", force).Msg("change detected")
-				}
-				lastValue = value
-				actual.Actual.Value = boolToInt32(value)
-				statuses.PublishSensorActual(actual)
-				binarySensorActualGauge.WithLabelValues(id).Set(float64(boolToInt32(value)))
-				if valueChanged {
-					binarySensorChangesTotal.WithLabelValues(id).Inc()
-				}
-				changes++
-				lastSent = time.Now()
+		}
+		force := atomic.CompareAndSwapInt32(&o.sendNow, 1, 0)
+		timeoutThreshold := time.Since(lastSent) > lastSensorSentThreshold
+		valueChanged := lastValue != value
+		if force || valueChanged || changes == 0 || timeoutThreshold {
+			// Send feedback data
+			log = log.With().
+				Bool("value", value).
+				Bool("last_value", lastValue).
+				Logger()
+			if force || lastValue != value || changes == 0 {
+				log.Debug().Bool("force", force).Msg("change detected")
 			}
+			lastValue = value
+			actual.Actual.Value = boolToInt32(value)
+			statuses.PublishSensorActual(actual)
+			binarySensorActualGauge.WithLabelValues(id).Set(float64(boolToInt32(value)))
+			if valueChanged {
+				binarySensorChangesTotal.WithLabelValues(id).Inc()
+			}
+			changes++
+			lastSent = time.Now()
 		}
 
 		// Wait a bit

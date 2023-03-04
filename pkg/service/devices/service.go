@@ -31,8 +31,8 @@ import (
 	"github.com/binkynet/BinkyNet/apis/util"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 
-	"github.com/binkynet/LocalWorker/service/bridge"
-	utils "github.com/binkynet/LocalWorker/service/util"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 // Service contains the API that is exposed by the device service.
@@ -45,7 +45,7 @@ type Service interface {
 	// Run the service until the given context is canceled.
 	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
 	// Close brings all devices back to a safe state.
-	Close() error
+	Close(context.Context) error
 	// Get a list of configured device IDs
 	GetConfiguredDeviceIDs() []string
 	// Get a list of unconfigured device IDs
@@ -142,10 +142,10 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 }
 
 // Close brings all devices back to a safe state.
-func (s *service) Close() error {
+func (s *service) Close(ctx context.Context) error {
 	var ae aerr.AggregateError
 	for _, d := range s.devices {
-		if err := d.Close(); err != nil {
+		if err := d.Close(ctx); err != nil {
 			ae.Add(err)
 		}
 	}

@@ -25,7 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
-	utils "github.com/binkynet/LocalWorker/service/util"
+	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 // StatusService is used by object types to report their status to the network master.

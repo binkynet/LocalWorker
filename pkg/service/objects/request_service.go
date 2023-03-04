@@ -27,7 +27,7 @@ import (
 	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
 
-	utils "github.com/binkynet/LocalWorker/service/util"
+	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 // RequestService is used by object types to receive requests from the network master.

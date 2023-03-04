@@ -18,6 +18,7 @@
 package bridge
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -25,7 +26,16 @@ import (
 type stubI2CBus struct {
 }
 
-func (s *stubI2CBus) OpenDevice(address uint8) (I2CDevice, error) {
+// Execute an option on the bus.
+func (s *stubI2CBus) Execute(ctx context.Context, address uint8, op func(ctx context.Context, dev I2CDevice) error) error {
+	dev, err := s.openDevice(address)
+	if err != nil {
+		return err
+	}
+	return op(ctx, dev)
+}
+
+func (s *stubI2CBus) openDevice(address uint8) (I2CDevice, error) {
 	return s, nil
 }
 

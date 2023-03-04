@@ -51,10 +51,13 @@ var (
 		"binary_sensor_actual",
 		"Actual value of binary sensor",
 		"id")
-	// Binary sensor metrics
 	binarySensorChangesTotal = metrics.MustRegisterCounterVec(subSystem,
 		"binary_sensor_changes_total",
 		"Number of times, actual value of binary sensor has changed",
+		"id")
+	binarySensorReadErrorsTotal = metrics.MustRegisterCounterVec(subSystem,
+		"binary_sensor_read_errors_total",
+		"Number of read errors of a binary sensor",
 		"id")
 
 	// Switch metrics

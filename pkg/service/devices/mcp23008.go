@@ -24,14 +24,14 @@ import (
 	"github.com/pkg/errors"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/LocalWorker/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
 )
 
 type mcp23008 struct {
 	mutex    sync.Mutex
 	onActive func()
 	config   model.Device
-	dev      bridge.I2CDevice
+	bus      bridge.I2CBus
 	address  byte
 	iodir    byte
 	value    byte
@@ -61,14 +61,10 @@ func newMcp23008(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO,
 	if err != nil {
 		return nil, err
 	}
-	dev, err := bus.OpenDevice(uint8(address))
-	if err != nil {
-		return nil, err
-	}
 	return &mcp23008{
 		onActive: onActive,
 		config:   config,
-		dev:      dev,
+		bus:      bus,
 		address:  byte(address),
 		iodir:    0xff,
 		value:    0xff, // Default high
@@ -82,24 +78,34 @@ func (d *mcp23008) Configure(ctx context.Context) error {
 
 	d.iodir = 0xff
 	d.onActive()
-	if err := d.dev.WriteByteReg(mcp23008RegIOCON, 0x20); err != nil {
-		return err
-	}
-	if err := d.dev.WriteByteReg(mcp23008RegIODIR, d.iodir); err != nil {
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		if err := dev.WriteByteReg(mcp23008RegIOCON, 0x20); err != nil {
+			return err
+		}
+		if err := dev.WriteByteReg(mcp23008RegIODIR, d.iodir); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
 }
 
 // Close brings the device back to a safe state.
-func (d *mcp23008) Close() error {
+func (d *mcp23008) Close(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
 	// Restore all to input
 	d.iodir = 0xff
 	d.onActive()
-	if err := d.dev.WriteByteReg(mcp23008RegIODIR, d.iodir); err != nil {
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		if err := dev.WriteByteReg(mcp23008RegIODIR, d.iodir); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -125,7 +131,12 @@ func (d *mcp23008) SetDirection(ctx context.Context, pin model.DeviceIndex, dire
 	} else {
 		d.iodir &= ^mask
 	}
-	if err := d.dev.WriteByteReg(mcp23008RegIODIR, d.iodir); err != nil {
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		if err := dev.WriteByteReg(mcp23008RegIODIR, d.iodir); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -140,8 +151,12 @@ func (d *mcp23008) GetDirection(ctx context.Context, pin model.DeviceIndex) (Pin
 	if err != nil {
 		return PinDirectionInput, err
 	}
-	value, err := d.dev.ReadByteReg(mcp23008RegIODIR)
-	if err != nil {
+	var value uint8
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		var err error
+		value, err = dev.ReadByteReg(mcp23008RegIODIR)
+		return err
+	}); err != nil {
 		return PinDirectionInput, err
 	}
 	if value&mask == 0 {
@@ -167,7 +182,12 @@ func (d *mcp23008) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 		} else {
 			d.value &= ^mask
 		}
-		if err := d.dev.WriteByteReg(mcp23008RegGPIO, d.value); err != nil {
+		if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+			if err := dev.WriteByteReg(mcp23008RegGPIO, d.value); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 		return nil
@@ -184,8 +204,12 @@ func (d *mcp23008) Get(ctx context.Context, pin model.DeviceIndex) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	value, err := d.dev.ReadByteReg(mcp23008RegGPIO)
-	if err != nil {
+	var value uint8
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		var err error
+		value, err = dev.ReadByteReg(mcp23008RegGPIO)
+		return err
+	}); err != nil {
 		return false, err
 	}
 	return mask&value != 0, nil

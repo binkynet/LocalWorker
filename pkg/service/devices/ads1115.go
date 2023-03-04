@@ -24,14 +24,14 @@ import (
 	"time"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/LocalWorker/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
 )
 
 type ads1115 struct {
 	mutex    sync.Mutex
 	onActive func()
 	config   model.Device
-	dev      bridge.I2CDevice
+	bus      bridge.I2CBus
 	address  byte
 }
 
@@ -123,14 +123,10 @@ func newADS1115(config model.Device, bus bridge.I2CBus, onActive func()) (ADC, e
 	if err != nil {
 		return nil, err
 	}
-	dev, err := bus.OpenDevice(uint8(address))
-	if err != nil {
-		return nil, err
-	}
 	return &ads1115{
 		onActive: onActive,
 		config:   config,
-		dev:      dev,
+		bus:      bus,
 		address:  byte(address),
 	}, nil
 }
@@ -142,21 +138,21 @@ func (d *ads1115) Configure(ctx context.Context) error {
 
 	d.onActive()
 	configBits := d.createConfigBits(1)
-	if err := d.writeConfig(configBits); err != nil {
+	if err := d.writeConfig(ctx, configBits); err != nil {
 		return err
 	}
 	return nil
 }
 
 // Close brings the device back to a safe state.
-func (d *ads1115) Close() error {
+func (d *ads1115) Close(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
 	// Restore all to defaults
 	d.onActive()
 	configBits := d.createConfigBits(1)
-	if err := d.writeConfig(configBits); err != nil {
+	if err := d.writeConfig(ctx, configBits); err != nil {
 		return err
 	}
 	return nil
@@ -174,11 +170,11 @@ func (d *ads1115) Get(ctx context.Context, pin model.DeviceIndex) (int, error) {
 
 	// Trigger a conversion
 	configBits := d.createConfigBits(1) | ADS1X15_REG_CONFIG_OS_SINGLE
-	if err := d.writeConfig(configBits); err != nil {
+	if err := d.writeConfig(ctx, configBits); err != nil {
 		return 0, err
 	}
 	// Fetch config
-	currentBits, err := d.readConfig()
+	currentBits, err := d.readConfig(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -194,7 +190,7 @@ func (d *ads1115) Get(ctx context.Context, pin model.DeviceIndex) (int, error) {
 			return 0, err
 		}
 		// Check conversion status
-		complete, _, err := d.isConversionComplete()
+		complete, _, err := d.isConversionComplete(ctx)
 		if err != nil {
 			return 0, err
 		}
@@ -207,7 +203,7 @@ func (d *ads1115) Get(ctx context.Context, pin model.DeviceIndex) (int, error) {
 	}
 
 	// Read conversion value
-	result, err := d.readConversion()
+	result, err := d.readConversion(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -215,13 +211,13 @@ func (d *ads1115) Get(ctx context.Context, pin model.DeviceIndex) (int, error) {
 }
 
 // read the Conversion registry
-func (d *ads1115) readConversion() (uint16, error) {
-	return d.readWordReg(ads1115RegConversion)
+func (d *ads1115) readConversion(ctx context.Context) (uint16, error) {
+	return d.readWordReg(ctx, ads1115RegConversion)
 }
 
 // Is the conversion complete?
-func (d *ads1115) isConversionComplete() (bool, uint16, error) {
-	status, err := d.readWordReg(ads1115RegConfig)
+func (d *ads1115) isConversionComplete(ctx context.Context) (bool, uint16, error) {
+	status, err := d.readWordReg(ctx, ads1115RegConfig)
 	if err != nil {
 		return false, 0, err
 	}
@@ -230,43 +226,54 @@ func (d *ads1115) isConversionComplete() (bool, uint16, error) {
 }
 
 // read the config registry
-func (d *ads1115) readConfig() (uint16, error) {
-	return d.readWordReg(ads1115RegConfig)
+func (d *ads1115) readConfig(ctx context.Context) (uint16, error) {
+	return d.readWordReg(ctx, ads1115RegConfig)
 }
 
 // write the config registry
-func (d *ads1115) writeConfig(configBits uint16) error {
-	return d.writeWordReg(ads1115RegConfig, configBits)
+func (d *ads1115) writeConfig(ctx context.Context, configBits uint16) error {
+	return d.writeWordReg(ctx, ads1115RegConfig, configBits)
 }
 
 // read a 16-bit register
-func (d *ads1115) readWordReg(reg uint8) (uint16, error) {
+func (d *ads1115) readWordReg(ctx context.Context, reg uint8) (uint16, error) {
 	// Send registry first
-	var buf [3]uint8
-	buf[0] = reg
-	if err := d.dev.WriteDevice(buf[:1]); err != nil {
-		return 0, fmt.Errorf("failed to write registry: %w", err)
-	}
+	var result uint16
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		var buf [3]uint8
+		buf[0] = reg
+		if err := dev.WriteDevice(buf[:1]); err != nil {
+			return fmt.Errorf("failed to write registry: %w", err)
+		}
 
-	// Read msb-lsb
-	if err := d.dev.ReadDevice(buf[1:]); err != nil {
-		return 0, fmt.Errorf("failed to read word: %w", err)
+		// Read msb-lsb
+		if err := dev.ReadDevice(buf[1:]); err != nil {
+			return fmt.Errorf("failed to read word: %w", err)
+		}
+		// ADS115 transfer MSB first, then LSB
+		// So we have to flip bytes
+		result = (uint16(buf[1]) << 8) | uint16(buf[2])
+		return nil
+	}); err != nil {
+		return 0, err
 	}
-	// ADS115 transfer MSB first, then LSB
-	// So we have to flip bytes
-	result := (uint16(buf[1]) << 8) | uint16(buf[2])
 	return result, nil
 }
 
 // write a 16-bit register value
-func (d *ads1115) writeWordReg(reg uint8, value uint16) error {
+func (d *ads1115) writeWordReg(ctx context.Context, reg uint8, value uint16) error {
 	var buf [3]uint8
 	// ADS115 transfer MSB first, then LSB
 	buf[0] = reg
 	buf[1] = uint8((value >> 8) & 0xFF)
 	buf[2] = uint8(value & 0xFF)
 
-	return d.dev.WriteDevice(buf[:])
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		return dev.WriteDevice(buf[:])
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // createConfigBits creates bits for the Config registry for a single shot

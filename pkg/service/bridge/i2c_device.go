@@ -24,7 +24,6 @@ import (
 	"syscall"
 	"unsafe"
 
-	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/pkg/errors"
 )
 
@@ -88,7 +87,7 @@ func newI2CDevice(bus *i2cBus, location string, address uint8) (*i2cDevice, erro
 	}
 
 	var err error
-	if d.file, err = os.OpenFile(location, os.O_RDWR, os.ModeExclusive); err != nil {
+	if d.file, err = os.OpenFile(location, os.O_RDWR, os.ModeDevice); err != nil {
 		return nil, err
 	}
 	if err := d.queryFunctionality(); err != nil {
@@ -130,19 +129,11 @@ func (d *i2cDevice) setAddress(address byte) (err error) {
 	return
 }
 
-func (d *i2cDevice) Close() (err error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	var ae aerr.AggregateError
+func (d *i2cDevice) closeFile() (err error) {
 	if err := d.file.Close(); err != nil {
-		ae.Add(err)
+		return err
 	}
-	if err := d.bus.closeDevice(d.address); err != nil {
-		ae.Add(err)
-	}
-
-	return ae.AsError()
+	return nil
 }
 
 func (d *i2cDevice) DetectDevice() error {

@@ -29,8 +29,8 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
-	"github.com/binkynet/LocalWorker/service/bridge"
-	grpcutil "github.com/binkynet/LocalWorker/service/util"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	grpcutil "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 type Service interface {

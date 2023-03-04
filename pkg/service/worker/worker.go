@@ -10,9 +10,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
-	"github.com/binkynet/LocalWorker/service/bridge"
-	"github.com/binkynet/LocalWorker/service/devices"
-	"github.com/binkynet/LocalWorker/service/objects"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/devices"
+	"github.com/binkynet/LocalWorker/pkg/service/objects"
 )
 
 // Service contains the API exposed by the worker service
@@ -70,7 +70,7 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 
 	defer func() {
 		log.Debug().Msg("closing devices service")
-		devService.Close()
+		devService.Close(context.Background())
 	}()
 
 	// Configure devices

@@ -31,8 +31,8 @@ import (
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/pkg/server"
-	"github.com/binkynet/LocalWorker/service"
-	"github.com/binkynet/LocalWorker/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service"
+	"github.com/binkynet/LocalWorker/pkg/service/bridge"
 )
 
 const (
