@@ -20,7 +20,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/pkg/errors"
 	terminate "github.com/pulcy/go-terminate"
 	"github.com/rs/zerolog"
 	"github.com/spf13/pflag"
@@ -33,6 +32,7 @@ import (
 	"github.com/binkynet/LocalWorker/pkg/server"
 	"github.com/binkynet/LocalWorker/pkg/service"
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/ui"
 )
 
 const (
@@ -40,12 +40,12 @@ const (
 	staticProjectVersion = "1.4.0"
 	defaultGrpcPort      = 7129
 	defaultHTTPPort      = 7130
+	defaultSSHPort       = 7777
 )
 
 var (
 	projectVersion = "dev"
 	projectBuild   = "dev"
-	maskAny        = errors.WithStack
 )
 
 func main() {
@@ -54,6 +54,7 @@ func main() {
 	var grpcPort int
 	var bridgeType string
 	var httpPort int
+	var sshPort int
 
 	lokiLogger := service.NewLokiLogger()
 	logWriter, err := netlog.NewLogger()
@@ -76,6 +77,7 @@ func main() {
 	pflag.StringVar(&serverHost, "host", "0.0.0.0", "Host address the GRPC server will listen on")
 	pflag.IntVar(&grpcPort, "port", defaultGrpcPort, "Port the GRPC server will listen on")
 	pflag.IntVar(&httpPort, "http-port", defaultHTTPPort, "Port the HTTP server will listen on")
+	pflag.IntVar(&sshPort, "ssh-port", defaultSSHPort, "Port the SSH server will listen on")
 	pflag.Parse()
 
 	var br bridge.API
@@ -123,10 +125,12 @@ func main() {
 	if err != nil {
 		Exitf(logger, "Failed to initialize Service: %v\n", err)
 	}
+	uiProv := ui.NewUIProvider()
 	srv, err := server.New(server.Config{
 		Host:     serverHost,
 		HTTPPort: httpPort,
-	}, logger)
+		SSHPort:  sshPort,
+	}, logger, uiProv)
 	if err != nil {
 		Exitf(logger, "Failed to initialize Server: %v\n", err)
 	}
