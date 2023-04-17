@@ -45,18 +45,6 @@ type I2CDevice interface {
 	ReadByte() (uint8, error)
 	// Write a byte to device
 	WriteByte(val uint8) (err error)
-	// Read a 16-bits word to the device
-	// S Addr Wr [A] Comm [A] Sr Addr Rd [A] [DataLow] A [DataHigh] NA P
-	ReadWordData(reg uint8) (val uint16, err error)
-	// Write a 16-bits word to the device
-	// S Addr Wr [A] Comm [A] DataLow [A] DataHigh [A] P
-	WriteWordData(reg uint8, data uint16) (err error)
-	// Read a block of data (without count) to the device
-	// S Addr Wr [A] Comm [A] Sr Addr Rd [A] [Data] A [Data] A ... A [Data] NA P
-	ReadI2CBlock(reg uint8, data []byte) (err error)
-	// Write a block of data (without count) to the device
-	// S Addr Wr [A] Comm [A] Data [A] Data [A] ... [A] Data [A] P
-	WriteI2CBlock(reg uint8, data []byte) (err error)
 	// Read a block of data directly from the device (/dev/...)
 	ReadDevice(data []byte) (err error)
 	// Write a block of data directly to the device (/dev/...)

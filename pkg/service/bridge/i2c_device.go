@@ -39,6 +39,12 @@ const (
 
 	// From  /usr/include/linux/i2c.h:
 	// Adapter functionality
+	I2C_FUNC_I2C                    = 0x00000001
+	I2C_FUNC_10BIT_ADDR             = 0x00000002 /* required for I2C_M_TEN */
+	I2C_FUNC_PROTOCOL_MANGLING      = 0x00000004 /* required for I2C_M_IGNORE_NAK etc. */
+	I2C_FUNC_SMBUS_PEC              = 0x00000008
+	I2C_FUNC_NOSTART                = 0x00000010 /* required for I2C_M_NOSTART */
+	I2C_FUNC_SLAVE                  = 0x00000020
 	I2C_FUNC_SMBUS_QUICK            = 0x00010000
 	I2C_FUNC_SMBUS_READ_BYTE        = 0x00020000
 	I2C_FUNC_SMBUS_WRITE_BYTE       = 0x00040000
@@ -191,55 +197,6 @@ func (d *i2cDevice) WriteByte(val uint8) (err error) {
 	return nil
 }
 
-// Read a 16-bits word to the device
-// S Addr Wr [A] Comm [A] Sr Addr Rd [A] [DataLow] A [DataHigh] NA P
-func (d *i2cDevice) ReadWordData(reg uint8) (val uint16, err error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	data, err := d.readWordData(reg)
-	if err != nil {
-		return 0, errors.Wrapf(err, "readWordData[0x%0x] failed", d.address, data)
-	}
-	return data, nil
-}
-
-// Write a 16-bits word to the device
-// S Addr Wr [A] Comm [A] DataLow [A] DataHigh [A] P
-func (d *i2cDevice) WriteWordData(reg uint8, data uint16) (err error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	if err := d.writeWordData(reg, data); err != nil {
-		return errors.Wrapf(err, "writeWordData[0x%0x](0x%0x) failed", d.address, data)
-	}
-	return nil
-}
-
-// Read a block of data (without count) to the device
-// S Addr Wr [A] Comm [A] Sr Addr Rd [A] [Data] A [Data] A ... A [Data] NA P
-func (d *i2cDevice) ReadI2CBlock(reg uint8, data []byte) (err error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	if err := d.readI2CBlock(reg, data); err != nil {
-		return errors.Wrapf(err, "readI2CBlock[0x%0x](0x%0x, ...) failed", d.address, reg)
-	}
-	return nil
-}
-
-// Write a block of data (without count) to the device
-// S Addr Wr [A] Comm [A] Data [A] Data [A] ... [A] Data [A] P
-func (d *i2cDevice) WriteI2CBlock(reg uint8, data []byte) (err error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	if err := d.writeI2CBlock(reg, data); err != nil {
-		return errors.Wrapf(err, "writeI2CBlock[0x%0x](0x%0x, %0x) failed", d.address, reg, data)
-	}
-	return nil
-}
-
 // Read a block of data directly from the device (/dev/...)
 func (d *i2cDevice) ReadDevice(data []byte) (err error) {
 	d.mutex.Lock()
@@ -299,16 +256,6 @@ func (d *i2cDevice) readByteData(reg uint8) (val uint8, err error) {
 	return data, err
 }
 
-func (d *i2cDevice) readWordData(reg uint8) (val uint16, err error) {
-	if d.funcs&I2C_FUNC_SMBUS_READ_WORD_DATA == 0 {
-		return 0, fmt.Errorf("SMBus read word data not supported")
-	}
-
-	var data uint16
-	err = d.smbusAccess(I2C_SMBUS_READ, reg, I2C_SMBUS_WORD_DATA, uintptr(unsafe.Pointer(&data)))
-	return data, err
-}
-
 func (d *i2cDevice) writeByte(val byte) (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_WRITE_BYTE == 0 {
 		return fmt.Errorf("SMBus write byte not supported")
@@ -325,64 +272,6 @@ func (d *i2cDevice) writeByteData(reg uint8, val uint8) (err error) {
 
 	var data = val
 	err = d.smbusAccess(I2C_SMBUS_WRITE, reg, I2C_SMBUS_BYTE_DATA, uintptr(unsafe.Pointer(&data)))
-	return err
-}
-
-func (d *i2cDevice) writeWordData(reg uint8, val uint16) (err error) {
-	if d.funcs&I2C_FUNC_SMBUS_WRITE_WORD_DATA == 0 {
-		return fmt.Errorf("SMBus write word data not supported")
-	}
-
-	var data = val
-	err = d.smbusAccess(I2C_SMBUS_WRITE, reg, I2C_SMBUS_WORD_DATA, uintptr(unsafe.Pointer(&data)))
-	return err
-}
-
-func (d *i2cDevice) writeBlockData(reg uint8, data []byte) (err error) {
-	if len(data) > 32 {
-		return fmt.Errorf("Writing blocks larger than 32 bytes (%v) not supported", len(data))
-	}
-
-	buf := make([]byte, len(data)+1)
-	copy(buf[1:], data)
-	buf[0] = reg
-
-	n, err := d.file.Write(buf)
-
-	if err != nil {
-		return err
-	}
-
-	if n != len(buf) {
-		return fmt.Errorf("Write to device truncated, %v of %v written", n, len(buf))
-	}
-
-	return nil
-}
-
-func (d *i2cDevice) readI2CBlock(reg uint8, data []byte) (err error) {
-	if d.funcs&I2C_FUNC_SMBUS_READ_I2C_BLOCK == 0 {
-		return fmt.Errorf("SMBus read I2C block not supported")
-	}
-
-	buf := make([]byte, len(data)+1)
-	buf[0] = byte(len(data))
-
-	err = d.smbusAccess(I2C_SMBUS_READ, reg, I2C_FUNC_SMBUS_READ_I2C_BLOCK, uintptr(unsafe.Pointer(&data)))
-	copy(data, buf[1:])
-	return err
-}
-
-func (d *i2cDevice) writeI2CBlock(reg uint8, data []byte) (err error) {
-	if d.funcs&I2C_FUNC_SMBUS_WRITE_I2C_BLOCK == 0 {
-		return fmt.Errorf("SMBus write I2C block not supported")
-	}
-
-	buf := make([]byte, len(data)+1)
-	copy(buf[1:], data)
-	buf[0] = byte(len(data))
-
-	err = d.smbusAccess(I2C_SMBUS_WRITE, reg, I2C_FUNC_SMBUS_WRITE_I2C_BLOCK, uintptr(unsafe.Pointer(&data)))
 	return err
 }
 
