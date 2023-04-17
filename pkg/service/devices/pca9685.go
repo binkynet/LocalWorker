@@ -125,7 +125,8 @@ func (d *pca9685) MaxValue() int {
 }
 
 // Set the output at given index (1...) to the given value
-func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32) error {
+func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex,
+	onValue, offValue uint32, enabled bool) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -135,16 +136,23 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 	}
 	d.onActive()
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
-		if err := dev.WriteByteReg(uint8(regBase+pca9685OnLowRegOfs), uint8(onValue&0xFF)); err != nil {
+		onLow := uint8(onValue & 0xFF)
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OnLowRegOfs), onLow); err != nil {
 			return err
 		}
-		if err := dev.WriteByteReg(uint8(regBase+pca9685OnHighRegOfs), uint8((onValue>>8)&0xFF)); err != nil {
+		onHigh := uint8((onValue >> 8) & 0x0F)
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OnHighRegOfs), onHigh); err != nil {
 			return err
 		}
-		if err := dev.WriteByteReg(uint8(regBase+pca9685OffLowRegOfs), uint8(offValue&0xFF)); err != nil {
+		offLow := uint8(offValue & 0xFF)
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OffLowRegOfs), offLow); err != nil {
 			return err
 		}
-		if err := dev.WriteByteReg(uint8(regBase+pca9685OffHighRegOfs), uint8((offValue>>8)&0xFF)); err != nil {
+		offHigh := uint8((offValue >> 8) & 0x0F)
+		if !enabled {
+			offHigh = offHigh | 0b00010000 // Full off
+		}
+		if err := dev.WriteByteReg(uint8(regBase+pca9685OffHighRegOfs), offHigh); err != nil {
 			return err
 		}
 		return nil
@@ -155,15 +163,16 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex, onValue, of
 }
 
 // Set the output at given index (1...)
-func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (uint32, uint32, error) {
+func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
 	regBase, err := d.regBase(output)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 	var on, off uint32
+	var enabled bool
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
 		onLow, err := dev.ReadByteReg(uint8(regBase + pca9685OnLowRegOfs))
 		if err != nil {
@@ -181,13 +190,14 @@ func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (uint32, ui
 		if err != nil {
 			return err
 		}
-		on = uint32(onLow) | (uint32(onHigh) << 8)
-		off = uint32(offLow) | (uint32(offHigh) << 8)
+		on = uint32(onLow) | (uint32(onHigh&0b00001111) << 8)
+		off = uint32(offLow) | (uint32(offHigh&0b00001111) << 8)
+		enabled = offHigh&0b00010000 != 0
 		return nil
 	}); err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
-	return on, off, nil
+	return on, off, enabled, nil
 }
 
 // regBase returns the first register for the given output.

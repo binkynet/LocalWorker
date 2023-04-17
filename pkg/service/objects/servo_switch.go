@@ -181,10 +181,15 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL); err != nil {
+	enabled := true
+	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
 		return err
 	}
-	time.Sleep(time.Millisecond)
+	time.Sleep(time.Millisecond * 100)
+	enabled = false
+	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -194,6 +199,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 	// Ensure we initialize directly after start
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
 	lastSendActual := time.Now()
+	disableDelayCount := 0
 	for {
 		targetPL := atomic.LoadUint32(&o.targetPL)
 		if targetPL != o.currentPL {
@@ -216,7 +222,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				nextPL = o.currentPL - uint32(step)
 			}
-			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL); err != nil {
+			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL, true); err != nil {
 				// oops
 				o.log.Debug().
 					Err(err).
@@ -225,6 +231,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				o.currentPL = nextPL
 			}
+			disableDelayCount = 5
 		} else {
 			// Requested position reached
 			targetDirection := model.SwitchDirection_STRAIGHT
@@ -247,6 +254,18 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
 				}
 				//o.log.Debug().Msg("Activated off")
+			}
+			// Disable PWM (if counter == 0)
+			if disableDelayCount > 0 {
+				disableDelayCount--
+			} else {
+				if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL, false); err != nil {
+					// oops
+					o.log.Debug().
+						Err(err).
+						Uint32("pulse", o.currentPL).
+						Msg("Set servo (disabled) failed")
+				}
 			}
 			// Send actual message (if needed)
 			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
