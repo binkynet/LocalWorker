@@ -80,7 +80,7 @@ update-modules:
 	go mod edit \
 		-replace github.com/coreos/go-systemd=github.com/coreos/go-systemd@e64a0ec8b42a61e2a9801dc1d0abe539dea79197
 	go get -u \
-		github.com/binkynet/BinkyNet@v1.4.1
+		github.com/binkynet/BinkyNet@v1.5.0
 	go mod tidy
 
 deploy:
@@ -88,4 +88,4 @@ deploy:
 	scp bin/boot.scr.uimg pi@192.168.77.1:/home/pi/tftp/
 
 deploy-local:
-	scp bin/linux/arm/bnLocalWorker ewout@192.168.140.168:/home/ewout/
+	scp bin/linux/arm/bnLocalWorker pi@192.168.140.104:/home/pi/
