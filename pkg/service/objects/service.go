@@ -88,6 +88,8 @@ func NewService(moduleID string, programVersion string, metricsPort int, configs
 			obj, err = newBinarySensor(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeBinaryOutput:
 			obj, err = newBinaryOutput(moduleID, id, address, *c, log, devService)
+		case model.ObjectTypeMagneticSwitch:
+			obj, err = newMagneticSwitch(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeRelaySwitch:
 			obj, err = newRelaySwitch(moduleID, id, address, *c, log, devService)
 		case model.ObjectTypeServoSwitch:

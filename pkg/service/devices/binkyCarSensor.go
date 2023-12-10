@@ -19,32 +19,47 @@ package devices
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
 )
 
 type binkyCarSensor struct {
+	log        zerolog.Logger
 	mutex      sync.Mutex
 	onActive   func()
 	config     model.Device
 	bus        bridge.I2CBus
 	address    byte
-	outputData byte
+	outputData []byte
+	pins       uint
 }
 
 const (
-	// Registry addresses
-	bcsRegData    = 0x00
-	bcsRegVersion = 0x01
+	// Register addresses
+	RegVersionMajor   = 0x00 // No input, returns 1 version
+	RegVersionMinor   = 0x01 // No input, returns 1 version
+	RegVersionPatch   = 0x02 // No input, returns 1 version
+	RegCarSensorCount = 0x03 // No input, returns 1 byte giving the number of detected car sensor bits (0..8)
+	RegI2COutputCount = 0x04 // No input, returns 1 byte giving the number of detected I2C binary output pins (0, 8, 16, ..., 256)
+	RegCarSensorState = 0x10 // No input, returns 1 byte with 8-bit car detection sensor state
+	RegOutput         = 0x20 // 1 byte input, targeting 8 on-pcb output pins
+	RegOutputI2C0     = 0x21 // 1 byte input, targeting 8 output pins on PCF8574 output device 0
+	RegOutputI2C1     = 0x22 // 1 byte input, targeting 8 output pins on PCF8574 output device 1
+	RegOutputI2C2     = 0x23 // 1 byte input, targeting 8 output pins on PCF8574 output device 2
+	RegOutputI2C3     = 0x24 // 1 byte input, targeting 8 output pins on PCF8574 output device 3
+	RegOutputI2C4     = 0x25 // 1 byte input, targeting 8 output pins on PCF8574 output device 4
+	RegOutputI2C5     = 0x26 // 1 byte input, targeting 8 output pins on PCF8574 output device 5
+	RegOutputI2C6     = 0x27 // 1 byte input, targeting 8 output pins on PCF8574 output device 6
+	RegOutputI2C7     = 0x28 // 1 byte input, targeting 8 output pins on PCF8574 output device 7
 )
 
 // newBinkyCarSensor creates a GPIO instance for a BinkyCarSensor device with given config.
-func newBinkyCarSensor(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO, error) {
+func newBinkyCarSensor(log zerolog.Logger, config model.Device, bus bridge.I2CBus, onActive func()) (GPIO, error) {
 	if config.Type != model.DeviceTypeBinkyCarSensor {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
@@ -53,11 +68,13 @@ func newBinkyCarSensor(config model.Device, bus bridge.I2CBus, onActive func()) 
 		return nil, err
 	}
 	return &binkyCarSensor{
+		log:        log,
 		onActive:   onActive,
 		config:     config,
 		bus:        bus,
 		address:    byte(address),
-		outputData: 0,
+		outputData: make([]byte, 9),
+		pins:       8,
 	}, nil
 }
 
@@ -68,11 +85,31 @@ func (d *binkyCarSensor) Configure(ctx context.Context) error {
 
 	d.onActive()
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
-		if version, err := dev.ReadByteReg(bcsRegVersion); err != nil {
+		versionMajor, err := dev.ReadByteReg(RegVersionMajor)
+		if err != nil {
 			return err
-		} else {
-			fmt.Println("version: 0x%x", version)
 		}
+		versionMinor, err := dev.ReadByteReg(RegVersionMinor)
+		if err != nil {
+			return err
+		}
+		versionPatch, err := dev.ReadByteReg(RegVersionPatch)
+		if err != nil {
+			return err
+		}
+
+		outputBitCount, err := dev.ReadByteReg(RegI2COutputCount)
+		if err != nil {
+			return err
+		}
+		sensorBitCount, err := dev.ReadByteReg(RegCarSensorCount)
+		if err != nil {
+			return err
+		}
+		d.pins = 16 + uint(outputBitCount) // 8 car sensor bits, 8 on-print output pins, X i2c output pins
+
+		d.log.Info().Msgf("BinkyCarSensor version=%d.%d.%d carSensorBits=%d i2cOutputBits=%d\n", versionMajor, versionMinor, versionPatch, sensorBitCount, outputBitCount)
+
 		return nil
 	}); err != nil {
 		return err
@@ -87,11 +124,18 @@ func (d *binkyCarSensor) Close(ctx context.Context) error {
 
 	// Restore all to input
 	d.onActive()
-	d.outputData = 0
+	for i := range d.outputData {
+		d.outputData[i] = 0
+	}
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
 		// Disable output
-		if err := dev.WriteByteReg(bcsRegData, 0); err != nil {
+		if err := dev.WriteByteReg(RegOutput, 0); err != nil {
 			return err
+		}
+		for i := uint8(0); i < 8; i++ {
+			if err := dev.WriteByteReg(RegOutputI2C0+i, 0); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -102,7 +146,7 @@ func (d *binkyCarSensor) Close(ctx context.Context) error {
 
 // PinCount returns the number of pins of the device
 func (d *binkyCarSensor) PinCount() uint {
-	return 8
+	return d.pins
 }
 
 // Set the direction of the pin at given index (1...)
@@ -117,7 +161,10 @@ func (d *binkyCarSensor) SetDirection(ctx context.Context, pin model.DeviceIndex
 
 // Get the direction of the pin at given index (1...)
 func (d *binkyCarSensor) GetDirection(ctx context.Context, pin model.DeviceIndex) (PinDirection, error) {
-	return PinDirectionInput, nil
+	if pin < 9 {
+		return PinDirectionInput, nil
+	}
+	return PinDirectionOutput, nil
 }
 
 // Set the pin at given index (1...) to the given value
@@ -125,43 +172,57 @@ func (d *binkyCarSensor) Set(ctx context.Context, pin model.DeviceIndex, value b
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	mask, err := d.bitMask(pin)
+	if pin < 8 {
+		// First 8 bits are input only
+		return errors.Wrapf(InvalidDirectionError, "pin %d has direction input", pin)
+	}
+	index, mask, err := d.bitMask(pin)
 	if err != nil {
 		return err
 	}
+	outputData := d.outputData[index]
 	if value {
-		d.outputData |= mask
+		outputData |= mask
 	} else {
-		d.outputData &= ^mask
+		outputData &= ^mask
+	}
+	if d.outputData[index] != outputData {
+		d.log.Debug().
+			Uint8("index", index).
+			Uint8("old", d.outputData[index]).
+			Uint8("new", outputData).
+			Msg("Setting new output value")
+		d.outputData[index] = outputData
 	}
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
 		// Set output
-		if err := dev.WriteByteReg(bcsRegData, d.outputData); err != nil {
+		if err := dev.WriteByteReg(RegOutput+index, d.outputData[index]); err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-
-	// TODO
-
-	return errors.Wrapf(InvalidDirectionError, "pin %d has direction input", pin)
+	return nil
 }
 
-// Set the pin at given index (1...)
+// Get the pin at given index (1...)
 func (d *binkyCarSensor) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	mask, err := d.bitMask(pin)
+	_, mask, err := d.bitMask(pin)
 	if err != nil {
 		return false, err
+	}
+	if pin > 8 {
+		// Only first 8 bits are input
+		return false, errors.Wrapf(InvalidPinError, "Pin must be between 1 and 8, got %d", pin)
 	}
 	var value uint8
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
 		var err error
-		value, err = dev.ReadByteReg(bcsRegData)
+		value, err = dev.ReadByteReg(RegCarSensorState)
 		return err
 	}); err != nil {
 		return false, err
@@ -170,11 +231,13 @@ func (d *binkyCarSensor) Get(ctx context.Context, pin model.DeviceIndex) (bool, 
 }
 
 // bitMask calculates a bit map (bit set for the given pin) and the corresponding
-// register offset (0, 1)
-func (d *binkyCarSensor) bitMask(pin model.DeviceIndex) (mask byte, err error) {
-	if pin < 1 || pin > 8 {
-		return 0, errors.Wrapf(InvalidPinError, "Pin must be between 1 and 8, got %d", pin)
+// register offset (0..8)
+func (d *binkyCarSensor) bitMask(pin model.DeviceIndex) (index, mask byte, err error) {
+	if pin < 1 || pin > model.DeviceIndex(d.pins) {
+		return 0, 0, errors.Wrapf(InvalidPinError, "Pin must be between 1 and %d, got %d", d.pins, pin)
 	}
-	mask = 1 << uint(pin-1)
-	return mask, nil
+	p := pin - 1
+	index = byte(p>>3) - 1
+	mask = 1 << (p & 0x07)
+	return index, mask, nil
 }

@@ -82,7 +82,7 @@ func NewService(hardwareID, moduleID, programVersion string, configs []*model.De
 		var err error
 		switch c.Type {
 		case model.DeviceTypeBinkyCarSensor:
-			dev, err = newBinkyCarSensor(*c, bus, s.onActive)
+			dev, err = newBinkyCarSensor(log, *c, bus, s.onActive)
 		case model.DeviceTypeADS1115:
 			dev, err = newADS1115(*c, bus, s.onActive)
 		case model.DeviceTypeMCP23008:
