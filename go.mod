@@ -5,7 +5,7 @@ go 1.21.2
 replace github.com/coreos/go-systemd => github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a
 
 require (
-	github.com/binkynet/BinkyNet v1.7.0
+	github.com/binkynet/BinkyNet v1.7.1
 	github.com/charmbracelet/bubbles v0.17.1
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.9.1
