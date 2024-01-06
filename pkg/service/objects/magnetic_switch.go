@@ -40,19 +40,26 @@ type magneticSwitch struct {
 	sender             string
 	straight           magneticSwitchMagnet
 	off                magneticSwitchMagnet
+	alwaysEnabled      bool
 	disableAllNeeded   bool
 	sendActualNeeded   int32
 	requestedDirection model.SwitchDirection
 }
 
 type magneticSwitchMagnet struct {
-	a, b magneticSwitchMagnetPin
+	a, b       magneticSwitchMagnetPin
+	invertPins bool
 }
 
 type magneticSwitchMagnetPin struct {
 	device devices.GPIO
 	pin    model.DeviceIndex
 	invert bool
+}
+
+func (msm *magneticSwitchMagnet) initialize(invertKey model.ObjectConfigKey, config model.Object) error {
+	msm.invertPins = config.GetBoolConfig(invertKey)
+	return nil
 }
 
 // configure is called once to put the object in the desired state.
@@ -67,6 +74,9 @@ func (msm magneticSwitchMagnet) configure(ctx context.Context) error {
 }
 
 func (msm magneticSwitchMagnet) activateMagnet(ctx context.Context, forward bool) error {
+	if msm.invertPins {
+		forward = !forward
+	}
 	if err := msm.a.device.Set(ctx, msm.a.pin, msm.a.pinValue(forward)); err != nil {
 		return err
 	}
@@ -113,11 +123,22 @@ func newMagneticSwitch(sender string, oid model.ObjectID, address model.ObjectAd
 	if config.Type != model.ObjectTypeMagneticSwitch {
 		return nil, model.InvalidArgument("Invalid object type '%s'", config.Type)
 	}
+	if !config.GetBoolConfig(model.ObjectConfigKeyDebug) {
+		log = log.Level(zerolog.InfoLevel)
+	}
+	alwaysEnabled := config.GetBoolConfig(model.ObjectConfigKeyMagneticAlwaysEnabled)
 	ms := &magneticSwitch{
-		log:     log,
-		config:  config,
-		address: address,
-		sender:  sender,
+		log:           log,
+		config:        config,
+		address:       address,
+		sender:        sender,
+		alwaysEnabled: alwaysEnabled,
+	}
+	if err := ms.straight.initialize(model.ObjectConfigKeyMagneticStraightInvert, config); err != nil {
+		return nil, err
+	}
+	if err := ms.off.initialize(model.ObjectConfigKeyMagneticOffInvert, config); err != nil {
+		return nil, err
 	}
 	if err := ms.straight.a.initialize(model.ConnectionNameMagneticStraightA, oid, config, devService); err != nil {
 		return nil, err
@@ -200,16 +221,17 @@ func (o *magneticSwitch) Run(ctx context.Context, requests RequestService, statu
 // ProcessMessage acts upons a given request.
 func (o *magneticSwitch) ProcessMessage(ctx context.Context, r model.Switch) error {
 	direction := r.GetRequest().GetDirection()
-	enabled := r.GetRequest().GetIsUsed() || true // TODO remove true
+	enabled := r.GetRequest().GetIsUsed()
 	log := o.log.With().
 		Str("direction", direction.String()).
 		Bool("enabled", enabled).
+		Bool("alwaysEnabled", o.alwaysEnabled).
 		Logger()
 	log.Debug().Msg("got magnetic-switch request")
 
 	o.mutex.Lock()
 	defer o.mutex.Unlock()
-	if err := o.switchTo(ctx, direction, enabled); err != nil {
+	if err := o.switchTo(ctx, direction, enabled || o.alwaysEnabled); err != nil {
 		return err
 	}
 
