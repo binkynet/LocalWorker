@@ -23,18 +23,6 @@ const (
 )
 
 var (
-	// Total number of changed configurations received
-	configurationChangesTotal = metrics.MustRegisterCounter(subSystem,
-		"configuration_changes_total",
-		"Total number of changed configurations received")
-	// ID of current environment
-	currentEnvironmentIDGauge = metrics.MustRegisterGauge(subSystem,
-		"environment_id",
-		"ID of current environment")
-	// ID of current worker
-	currentWorkerIDGauge = metrics.MustRegisterGauge(subSystem,
-		"worker_id",
-		"ID of current worker")
 	// Total number of changes in loki service detected
 	lokiServiceChangesTotal = metrics.MustRegisterCounter(subSystem,
 		"loki_service_changes_total",
@@ -44,7 +32,4 @@ var (
 		"network_control_service_changes_total",
 		"Total number of changes in network control service detected")
 	// Total number of workers created
-	workerCountTotal = metrics.MustRegisterCounter(subSystem,
-		"worker_count_total",
-		"Total number of workers created")
 )

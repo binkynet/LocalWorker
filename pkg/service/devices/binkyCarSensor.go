@@ -56,6 +56,14 @@ const (
 	RegOutputI2C5     = 0x26 // 1 byte input, targeting 8 output pins on PCF8574 output device 5
 	RegOutputI2C6     = 0x27 // 1 byte input, targeting 8 output pins on PCF8574 output device 6
 	RegOutputI2C7     = 0x28 // 1 byte input, targeting 8 output pins on PCF8574 output device 7
+	RegConfigurePWM0  = 0x30 // 1 byte input, pwm-value (0-256) of pin 0
+	RegConfigurePWM1  = 0x31 // 1 byte input, pwm-value (0-256) of pin 1
+	RegConfigurePWM2  = 0x32 // 1 byte input, pwm-value (0-256) of pin 2
+	RegConfigurePWM3  = 0x33 // 1 byte input, pwm-value (0-256) of pin 3
+	RegConfigurePWM4  = 0x34 // 1 byte input, pwm-value (0-256) of pin 4
+	RegConfigurePWM5  = 0x35 // 1 byte input, pwm-value (0-256) of pin 5
+	RegConfigurePWM6  = 0x36 // 1 byte input, pwm-value (0-256) of pin 6
+	RegConfigurePWM7  = 0x37 // 1 byte input, pwm-value (0-256) of pin 7
 )
 
 // newBinkyCarSensor creates a GPIO instance for a BinkyCarSensor device with given config.
@@ -228,6 +236,43 @@ func (d *binkyCarSensor) Get(ctx context.Context, pin model.DeviceIndex) (bool, 
 		return false, err
 	}
 	return mask&value != 0, nil
+}
+
+// PWMPinCount returns the number of PWM output pins of the device
+func (d *binkyCarSensor) PWMPinCount() int {
+	return 8
+}
+
+// MaxPWMValue returns the maximum valid value for onValue or offValue.
+func (d *binkyCarSensor) MaxPWMValue() uint32 {
+	return 4095
+}
+
+// SetPWM the output at given index (1...) to the given value
+func (d *binkyCarSensor) SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled bool) error {
+	ioIndex := byte(output - 1)
+	value := uint8(offValue / 16)
+	d.log.Debug().
+		Uint8("ioIndex", ioIndex).
+		Uint8("value", value).
+		Msg("SetPWM")
+	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		if err := dev.WriteByteReg(RegConfigurePWM0+ioIndex, value); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+
+}
+
+// GetPWM the output at given index (1...)
+// Returns onValue,offValue,enabled,error
+func (d *binkyCarSensor) GetPWM(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error) {
+	// Not implemented
+	return 0, 0, false, nil
 }
 
 // bitMask calculates a bit map (bit set for the given pin) and the corresponding

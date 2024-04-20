@@ -114,18 +114,18 @@ func (d *pca9685) Close(ctx context.Context) error {
 	return nil
 }
 
-// OutputCount returns the number of pwm outputs of the device
-func (d *pca9685) OutputCount() int {
+// PWMPinCount returns the number of pwm outputs of the device
+func (d *pca9685) PWMPinCount() int {
 	return 16
 }
 
-// MaxValue returns the maximum valid value for onValue or offValue.
-func (d *pca9685) MaxValue() int {
+// MaxPWMValue returns the maximum valid value for onValue or offValue.
+func (d *pca9685) MaxPWMValue() uint32 {
 	return 4095
 }
 
-// Set the output at given index (1...) to the given value
-func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex,
+// SetPWM the output at given index (1...) to the given value
+func (d *pca9685) SetPWM(ctx context.Context, output model.DeviceIndex,
 	onValue, offValue uint32, enabled bool) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
@@ -163,7 +163,7 @@ func (d *pca9685) Set(ctx context.Context, output model.DeviceIndex,
 }
 
 // Set the output at given index (1...)
-func (d *pca9685) Get(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error) {
+func (d *pca9685) GetPWM(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 

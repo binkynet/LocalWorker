@@ -18,24 +18,23 @@ import (
 	"context"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	discovery "github.com/binkynet/BinkyNet/discovery"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
+	"google.golang.org/grpc"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/ncs"
 	grpcutil "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 type Service interface {
 	// Run the worker until the given context is cancelled.
-	Run(ctx context.Context) error
+	Run(ctx context.Context)
 }
 
 type Config struct {
@@ -53,15 +52,11 @@ type service struct {
 	Config
 	Dependencies
 
-	mutex             sync.Mutex
-	hostID            string
-	workerCancel      func()
-	shutdown          bool
-	lastEnvironmentID uint32
-	lastWorkerID      uint32
-	environmentSem    *semaphore.Weighted
-	workerSem         *semaphore.Weighted
-	startedAt         time.Time
+	mutex     sync.Mutex
+	hostID    string
+	ncsCancel func()
+	shutdown  bool
+	startedAt time.Time
 
 	nwControlListener *discovery.ServiceListener
 	lokiListener      *discovery.ServiceListener
@@ -86,8 +81,6 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 		nwControlChanges:  make(chan api.ServiceInfo),
 		lokiChanges:       make(chan api.ServiceInfo),
 		timeOffsetChanges: make(chan int64),
-		environmentSem:    semaphore.NewWeighted(1),
-		workerSem:         semaphore.NewWeighted(1),
 		startedAt:         time.Now(),
 	}
 	s.nwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeNetworkControl, true, s.nwControlChanged)
@@ -98,7 +91,7 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 // Run initialize the local worker and then continues
 // to register the worker, followed by running the worker loop
 // in a given environment.
-func (s *service) Run(ctx context.Context) error {
+func (s *service) Run(ctx context.Context) {
 	log := s.Logger.With().Str("host-id", s.hostID).Logger()
 	defer s.Bridge.Close()
 
@@ -128,7 +121,7 @@ func (s *service) Run(ctx context.Context) error {
 			log.Debug().Msg("NetworkControl discovery change received")
 		case <-ctx.Done():
 			// Context canceled
-			return nil
+			return
 		case <-time.After(time.Second * 2):
 			// Retry
 		}
@@ -139,118 +132,75 @@ func (s *service) Run(ctx context.Context) error {
 			continue
 		}
 
-		if err := func(nwControlInfo *api.ServiceInfo) error {
-			// Dialog connection to nwControl
-			nwControlConn, err := grpcutil.DialConn(nwControlInfo)
-			if err != nil {
-				log.Warn().Err(err).Msg("Failed to dial NetworkControl service")
-				return nil
-			}
+		// Dialog connection to nwControl
+		log.Debug().Msg("Dialing NetworkControl service...")
+		nwControlConn, err := grpcutil.DialConn(nwControlInfo)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to dial NetworkControl service")
+			// Reset service info, so we need to get a fresh update
+			nwControlInfo = nil
+		}
+
+		// Run NCS with given nwControlConn in local func,
+		// so we can close the connection on exit.
+		func(ncControlConn *grpc.ClientConn) {
+			// Ensure we close the connection on exit
 			defer nwControlConn.Close()
 			nwControlClient := api.NewNetworkControlServiceClient(nwControlConn)
 
 			// Initialization done, run loop
-			workerCtx, workerCancel := context.WithCancel(ctx)
+			ncsCtx, ncsCancel := context.WithCancel(ctx)
 			s.mutex.Lock()
-			s.workerCancel = workerCancel
+			s.ncsCancel = ncsCancel
 			s.mutex.Unlock()
-			err = s.runWorkerInEnvironment(workerCtx, log, nwControlClient)
-			workerCancel()
-			if err != nil {
-				log.Debug().Err(err).Msg("runWorkerInEnvironment failed")
-				return err
+			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID, s.MetricsPort,
+				s.timeOffsetChanges, s.Bridge, nwControlClient)
+			runErr := ncs.Run(ncsCtx)
+			ncsCancel()
+			if runErr != nil {
+				log.Debug().Err(runErr).Msg("ncs.Run failed")
 			}
-			return nil
-		}(nwControlInfo); err != nil {
-			log.Warn().Err(err).Msg("Worker loop failed. Retrying...")
-		}
+			if s.shutdown {
+				if err := environment.Reboot(log); err != nil {
+					log.Error().Err(err).Msg("Reboot failed")
+				}
+				// Sleep before exit to allow logs to be send
+				log.Warn().Msg("About to exit process")
+				time.Sleep(time.Second * 5)
+				// Do actual exit
+				log.Warn().Msg("Exiting process")
+				os.Exit(1)
+			}
+		}(nwControlConn)
 
 		// If context cancelled, return
 		if ctx.Err() != nil {
-			return nil
+			return
 		}
 	}
 }
 
 // NetworkControlService has changed
 func (s *service) nwControlChanged(info api.ServiceInfo) {
+	log := s.Logger
 	networkControlServiceChangesTotal.Inc()
 	s.mutex.Lock()
-	cancel := s.workerCancel
+	cancel := s.ncsCancel
 	s.mutex.Unlock()
 	if cancel != nil {
-		s.Logger.Debug().Msg("nwControlChanged: canceling worker")
+		log.Debug().Msg("nwControlChanged: canceling NCS")
 		cancel()
 	}
+	log.Debug().Msg("Sending nwControl change into channel...")
 	s.nwControlChanges <- info
+	log.Debug().Msg("Sent nwControl change into channel.")
 }
 
 // Loki service has changed
 func (s *service) lokiChanged(info api.ServiceInfo) {
+	log := s.Logger
 	lokiServiceChangesTotal.Inc()
+	log.Debug().Msg("Sending loki change into channel...")
 	s.lokiChanges <- info
-}
-
-// Run the worker until the given context is cancelled.
-func (s *service) runWorkerInEnvironment(ctx context.Context,
-	log zerolog.Logger,
-	nwControlClient api.NetworkControlServiceClient) error {
-
-	// Prepare logger
-	environmentID := atomic.AddUint32(&s.lastEnvironmentID, 1)
-	log = log.With().Uint32("environment-id", environmentID).Logger()
-
-	// Acquire environment semaphore
-	if err := s.environmentSem.Acquire(ctx, 1); err != nil {
-		log.Warn().Err(err).Msg("Failed to acquire environment semaphore")
-		return err
-	}
-	defer s.environmentSem.Release(1)
-
-	// Check context cancelation
-	if err := ctx.Err(); err != nil {
-		log.Warn().Err(err).Msg("Environment context canceled before we started")
-		return err
-	}
-
-	// Set metrics
-	currentEnvironmentIDGauge.Set(float64(environmentID))
-
-	// Initialization done, run loop
-	s.Bridge.SetGreenLED(true)
-	s.Bridge.SetRedLED(false)
-
-	defer func() {
-		s.Bridge.SetGreenLED(false)
-		s.Bridge.SetRedLED(true)
-		if s.shutdown {
-			if err := environment.Reboot(log); err != nil {
-				log.Error().Err(err).Msg("Reboot failed")
-			}
-			// Sleep before exit to allow logs to be send
-			log.Warn().Msg("About to exit process")
-			time.Sleep(time.Second * 5)
-			// Do actual exit
-			log.Warn().Msg("Exiting process")
-			os.Exit(1)
-		}
-	}()
-
-	configChanged := make(chan *api.LocalWorkerConfig)
-	defer close(configChanged)
-	stopWorker := make(chan struct{})
-	defer close(stopWorker)
-	g, ctx := errgroup.WithContext(ctx)
-
-	// Keep requesting configuration in stream
-	g.Go(func() error {
-		return s.runLoadConfig(ctx, log, nwControlClient, configChanged, s.timeOffsetChanges, stopWorker)
-	})
-
-	// Keep running a worker
-	g.Go(func() error {
-		return s.runWorkers(ctx, log, nwControlClient, configChanged, stopWorker)
-	})
-
-	return g.Wait()
+	log.Debug().Msg("Sent loki change into channel.")
 }

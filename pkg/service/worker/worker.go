@@ -18,7 +18,7 @@ import (
 // Service contains the API exposed by the worker service
 type Service interface {
 	// Run the worker service until the given context is cancelled.
-	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
+	Run(ctx context.Context) error
 }
 
 type Config struct {
@@ -30,8 +30,9 @@ type Config struct {
 }
 
 type Dependencies struct {
-	Log    zerolog.Logger
-	Bridge bridge.API
+	Log             zerolog.Logger
+	Bridge          bridge.API
+	NwControlClient model.NetworkControlServiceClient
 }
 
 // NewService instantiates a new Service.
@@ -50,7 +51,7 @@ type service struct {
 }
 
 // Run the worker service until the given context is cancelled.
-func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
+func (s *service) Run(ctx context.Context) error {
 	log := s.Log
 	// Open I2C bus
 	log.Debug().Msg("open I2C bus")
@@ -110,7 +111,7 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 	g, lctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		log.Debug().Msg("run devices")
-		if err := devService.Run(lctx, nwControlClient); err != nil {
+		if err := devService.Run(lctx, s.NwControlClient); err != nil {
 			log.Error().Err(err).Msg("Run devices failed")
 			return fmt.Errorf("failed to run devices: %w", err)
 		}
@@ -119,7 +120,7 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 	})
 	g.Go(func() error {
 		s.Log.Debug().Msg("run objects")
-		if err := objService.Run(lctx, nwControlClient); err != nil {
+		if err := objService.Run(lctx, s.NwControlClient); err != nil {
 			log.Error().Err(err).Msg("Run objects failed")
 			return fmt.Errorf("failed to run objects: %w", err)
 		}

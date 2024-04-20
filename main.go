@@ -145,7 +145,7 @@ func main() {
 
 	fmt.Printf("Starting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return svc.Run(ctx) })
+	g.Go(func() error { svc.Run(ctx); return nil })
 	g.Go(func() error { return srv.Run(ctx) })
 	if err := g.Wait(); err != nil {
 		Exitf(logger, "Service run failed: %#v", err)

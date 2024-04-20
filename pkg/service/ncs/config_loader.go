@@ -12,7 +12,7 @@
 //    See the License for the specific language governing permissions and
 //    limitations under the License.
 
-package service
+package ncs
 
 import (
 	"context"
@@ -20,27 +20,23 @@ import (
 
 	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/rs/zerolog"
 )
 
 // runLoadConfig keeps requesting the worker configuration and puts
 // config changes in configChanged channel.
-func (s *service) runLoadConfig(ctx context.Context,
-	log zerolog.Logger,
-	nwControlClient api.NetworkControlServiceClient,
-	configChanged chan *api.LocalWorkerConfig,
-	timeOffsetChanged chan int64,
-	stopWorker chan struct{}) error {
+func (ncs *networkControlService) runLoadConfig(ctx context.Context,
+	configChanged chan *api.LocalWorkerConfig) {
 
 	// Prepare log
-	log = log.With().Str("component", "config-reader").Logger()
+	log := ncs.log.With().Str("component", "config-reader").Logger()
 
 	loadConfigStream := func(log zerolog.Logger) error {
-		confStream, err := nwControlClient.WatchLocalWorkers(ctx, &api.WatchOptions{
+		log.Debug().Msg("Calling WatchLocalWorkers...")
+		confStream, err := ncs.nwControlClient.WatchLocalWorkers(ctx, &api.WatchOptions{
 			WatchRequestChanges: true,
-			ModuleId:            s.hostID,
-		}, grpc_retry.WithMax(3))
+			ModuleId:            ncs.hostID,
+		})
 		if err != nil {
 			log.Debug().Err(err).Msg("GetConfig failed.")
 			return err
@@ -49,12 +45,15 @@ func (s *service) runLoadConfig(ctx context.Context,
 		var lastConfHash string
 		for {
 			// Read configuration
+			log.Debug().Msg("Calling WatchLocalWorkers.Recv...")
 			lw, err := confStream.Recv()
+			log.Debug().Err(err).Msg("Called WatchLocalWorkers.Recv.")
 			if util.IsStreamClosed(err) || ctx.Err() != nil {
+				log.Debug().Err(err).Msg("WatchLocalWorkers stream closed.")
 				return nil
 			} else if err != nil {
-				log.Error().Err(err).Msg("Failed to read configuration")
-				return nil
+				log.Error().Err(err).Msg("WatchLocalWorkers failed to read configuration")
+				return err
 			}
 			conf := lw.GetRequest()
 			hash := conf.GetHash()
@@ -72,7 +71,7 @@ func (s *service) runLoadConfig(ctx context.Context,
 					timeUnix := time.Now().Unix()
 					offset := ut - timeUnix
 					select {
-					case timeOffsetChanged <- offset:
+					case ncs.timeOffsetChanges <- offset:
 						// Continue
 					case <-ctx.Done():
 						// Context canceled
@@ -105,13 +104,12 @@ func (s *service) runLoadConfig(ctx context.Context,
 		if recentErrors > 10 {
 			// Too many recent errors, stop the worker
 			log.Debug().Msg("Stopping worker because of too many recent errors")
-			stopWorker <- struct{}{}
-			return nil
+			return
 		}
 		select {
 		case <-ctx.Done():
 			// Context canceled
-			return nil
+			return
 		case <-time.After(delay):
 			// Retry
 		}

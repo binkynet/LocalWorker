@@ -26,13 +26,13 @@ import (
 // PWM contains the API that is supported by all pulse width modulation devices.
 type PWM interface {
 	Device
-	// OutputCount returns the number of outputs of the device
-	OutputCount() int
-	// MaxValue returns the maximum valid value for onValue or offValue.
-	MaxValue() int
-	// Set the output at given index (1...) to the given value
-	Set(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled bool) error
-	// Get the output at given index (1...)
+	// PWMPinCount returns the number of PWM output pins of the device
+	PWMPinCount() int
+	// MaxPWMValue returns the maximum valid value for onValue or offValue.
+	MaxPWMValue() uint32
+	// SetPWM the output at given index (1...) to the given value
+	SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled bool) error
+	// GetPWM the output at given index (1...)
 	// Returns onValue,offValue,enabled,error
-	Get(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error)
+	GetPWM(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error)
 }

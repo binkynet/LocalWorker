@@ -1,4 +1,7 @@
-FROM golang:1.19
+FROM golang:1.22
 
-ENV GO111MODULE=off 
-RUN go get github.com/u-root/u-root
+RUN go mod init github.com/binkynet/u-root-build-image && \
+    go install github.com/u-root/u-root@v0.14.0
+
+RUN mkdir -p /go/u-root && cd /go && \
+    git clone https://github.com/u-root/u-root

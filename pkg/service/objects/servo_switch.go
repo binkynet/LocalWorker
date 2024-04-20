@@ -182,12 +182,12 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 		}
 	}
 	enabled := true
-	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
+	if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
 		return err
 	}
 	time.Sleep(time.Millisecond * 100)
 	enabled = false
-	if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
+	if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
 		return err
 	}
 	return nil
@@ -222,7 +222,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				nextPL = o.currentPL - uint32(step)
 			}
-			if err := o.servo.device.Set(ctx, o.servo.index, 0, nextPL, true); err != nil {
+			if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, nextPL, true); err != nil {
 				// oops
 				o.log.Debug().
 					Err(err).
@@ -259,7 +259,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			if disableDelayCount > 0 {
 				disableDelayCount--
 			} else {
-				if err := o.servo.device.Set(ctx, o.servo.index, 0, o.currentPL, false); err != nil {
+				if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, false); err != nil {
 					// oops
 					o.log.Debug().
 						Err(err).

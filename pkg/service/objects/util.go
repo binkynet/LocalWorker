@@ -70,7 +70,7 @@ func getPWMForPin(pin model.DevicePin, devService devices.Service) (devices.PWM,
 		return nil, model.InvalidArgument("Device '%s' is not a PWM", pin.DeviceId)
 	}
 	pinNr := pin.Index
-	if pinNr < 1 || int(pinNr) > pwm.OutputCount() {
+	if pinNr < 1 || int(pinNr) > pwm.PWMPinCount() {
 		return nil, model.InvalidArgument("Pin %d is out of range for device '%s'", pinNr, pin.DeviceId)
 	}
 	return pwm, nil
