@@ -39,7 +39,8 @@ type NetworkControlService interface {
 
 // NewNetworkControlService constructs a new network control service for the given
 // client.
-func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string, metricsPort int,
+func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
+	metricsPort, grpcPort int,
 	timeOffsetChanges chan int64, bridge bridge.API,
 	nwControlClient api.NetworkControlServiceClient) NetworkControlService {
 	// Prepare logger
@@ -50,6 +51,7 @@ func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
 		ncsID:          ncsID,
 		programVersion: programVersion,
 		metricsPort:    metricsPort,
+		grpcPort:       grpcPort,
 		hostID:         hostID,
 		log: log.With().
 			Str("component", "ncs").
@@ -66,6 +68,7 @@ func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
 type networkControlService struct {
 	programVersion    string
 	metricsPort       int
+	grpcPort          int
 	hostID            string
 	ncsID             uint32
 	log               zerolog.Logger

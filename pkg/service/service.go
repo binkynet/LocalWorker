@@ -35,11 +35,13 @@ import (
 type Service interface {
 	// Run the worker until the given context is cancelled.
 	Run(ctx context.Context)
+	api.LocalWorkerServiceServer
 }
 
 type Config struct {
 	ProgramVersion string
 	MetricsPort    int
+	GRPCPort       int
 }
 
 type Dependencies struct {
@@ -153,7 +155,8 @@ func (s *service) Run(ctx context.Context) {
 			s.mutex.Lock()
 			s.ncsCancel = ncsCancel
 			s.mutex.Unlock()
-			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID, s.MetricsPort,
+			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
+				s.MetricsPort, s.GRPCPort,
 				s.timeOffsetChanges, s.Bridge, nwControlClient)
 			runErr := ncs.Run(ncsCtx)
 			ncsCancel()
@@ -178,6 +181,19 @@ func (s *service) Run(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// Reset the local worker
+func (s *service) Reset(context.Context, *api.Empty) (*api.Empty, error) {
+	log := s.Logger
+	go func() {
+		log.Warn().Msg("About to reset process")
+		time.Sleep(time.Second * 5)
+		// Do actual exit
+		log.Warn().Msg("Resetting process")
+		os.Exit(1)
+	}()
+	return &api.Empty{}, nil
 }
 
 // NetworkControlService has changed

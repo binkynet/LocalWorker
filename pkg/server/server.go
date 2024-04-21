@@ -24,14 +24,18 @@ import (
 	"net/http"
 	"strconv"
 
+	api "github.com/binkynet/BinkyNet/apis/v1"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	bm "github.com/charmbracelet/wish/bubbletea"
 	lm "github.com/charmbracelet/wish/logging"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 // Config for the HTTP server.
@@ -42,13 +46,16 @@ type Config struct {
 	HTTPPort int
 	// Port to listen on for SSH requests
 	SSHPort int
+	// Port to listen on for GRPC requests
+	GRPCPort int
 }
 
 // Server runs the HTTP server for the service.
 type Server struct {
 	Config
-	log zerolog.Logger
-	ui  UI
+	log     zerolog.Logger
+	ui      UI
+	service Service
 }
 
 type UI interface {
@@ -59,12 +66,18 @@ type UI interface {
 	Handler(s ssh.Session) (tea.Model, []tea.ProgramOption)
 }
 
+// Implementation of the GRPC service.
+type Service interface {
+	api.LocalWorkerServiceServer
+}
+
 // New configures a new Server.
-func New(cfg Config, log zerolog.Logger, ui UI) (*Server, error) {
+func New(cfg Config, log zerolog.Logger, ui UI, service Service) (*Server, error) {
 	return &Server{
-		Config: cfg,
-		log:    log,
-		ui:     ui,
+		Config:  cfg,
+		log:     log,
+		ui:      ui,
+		service: service,
 	}, nil
 }
 
@@ -99,6 +112,22 @@ func (s *Server) Run(ctx context.Context) error {
 		log.Fatal().Err(err).Msgf("failed to listen on address %s", sshAddr)
 	}
 
+	// Prepare GRPC listener
+	grpcAddr := net.JoinHostPort(s.Host, strconv.Itoa(s.GRPCPort))
+	grpcLis, err := net.Listen("tcp", grpcAddr)
+	if err != nil {
+		log.Fatal().Err(err).Msgf("failed to listen on address %s", grpcAddr)
+	}
+
+	// Prepare GRPC server
+	grpcSrv := grpc.NewServer(
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+	)
+	api.RegisterLocalWorkerServiceServer(grpcSrv, s.service)
+	// Register reflection service on gRPC server.
+	reflection.Register(grpcSrv)
+
 	// Serve apis
 	log.Debug().Str("address", httpAddr).Msg("Serving HTTP")
 	go func() {
@@ -106,6 +135,13 @@ func (s *Server) Run(ctx context.Context) error {
 			log.Fatal().Err(err).Msg("failed to serve HTTP server")
 		}
 		log.Debug().Str("address", httpAddr).Msg("Done Serving HTTP")
+	}()
+	log.Debug().Str("address", grpcAddr).Msg("Serving GRPC")
+	go func() {
+		if err := grpcSrv.Serve(grpcLis); err != nil {
+			log.Fatal().Err(err).Msg("failed to serve GRPC server")
+		}
+		log.Debug().Str("address", httpAddr).Msg("Done Serving GRPC")
 	}()
 	// Serve UI
 	log.Debug().Str("address", sshAddr).Msg("Serving SSH")
@@ -121,6 +157,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	log.Info().Msg("Closing servers")
 	httpSrv.Shutdown(context.Background())
+	grpcSrv.GracefulStop()
 	sshSrv.Shutdown(context.Background())
 
 	return nil

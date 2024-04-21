@@ -52,6 +52,7 @@ type service struct {
 	configuredObjects map[model.ObjectAddress]Object
 	programVersion    string
 	metricsPort       int
+	grpcPort          int
 	log               zerolog.Logger
 }
 
@@ -62,7 +63,7 @@ const (
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, programVersion string, metricsPort int, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, programVersion string, metricsPort, grpcPort int, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
@@ -71,6 +72,7 @@ func NewService(moduleID string, programVersion string, metricsPort int, configs
 		configuredObjects: make(map[model.ObjectAddress]Object),
 		programVersion:    programVersion,
 		metricsPort:       metricsPort,
+		grpcPort:          grpcPort,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for _, c := range configs {
@@ -263,12 +265,14 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 	msg := model.LocalWorker{
 		Id: s.moduleID,
 		Actual: &model.LocalWorkerInfo{
-			Id:            s.moduleID,
-			Description:   "Local worker",
-			Version:       s.programVersion,
-			Uptime:        int64(time.Since(s.startTime).Seconds()),
-			MetricsPort:   int32(s.metricsPort),
-			MetricsSecure: false,
+			Id:                       s.moduleID,
+			Description:              "Local worker",
+			Version:                  s.programVersion,
+			Uptime:                   int64(time.Since(s.startTime).Seconds()),
+			MetricsPort:              int32(s.metricsPort),
+			MetricsSecure:            false,
+			LocalWorkerServicePort:   int32(s.grpcPort),
+			LocalWorkerServiceSecure: false,
 		},
 	}
 	lastPingLog := time.Now()

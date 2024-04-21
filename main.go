@@ -117,6 +117,7 @@ func main() {
 	svc, err := service.NewService(service.Config{
 		ProgramVersion: version,
 		MetricsPort:    httpPort,
+		GRPCPort:       grpcPort,
 	}, service.Dependencies{
 		Logger:     logger,
 		Bridge:     br,
@@ -130,7 +131,8 @@ func main() {
 		Host:     serverHost,
 		HTTPPort: httpPort,
 		SSHPort:  sshPort,
-	}, logger, uiProv)
+		GRPCPort: grpcPort,
+	}, logger, uiProv, svc)
 	if err != nil {
 		Exitf(logger, "Failed to initialize Server: %v\n", err)
 	}

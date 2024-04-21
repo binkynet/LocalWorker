@@ -27,6 +27,7 @@ type Config struct {
 	ModuleID       string
 	HardwareID     string
 	MetricsPort    int
+	GRPCPort       int
 }
 
 type Dependencies struct {
@@ -88,7 +89,7 @@ func (s *service) Run(ctx context.Context) error {
 	// Build objects service
 	log.Debug().Msg("build objects service")
 	objService, err := objects.NewService(s.config.ModuleID, s.config.ProgramVersion,
-		s.config.MetricsPort, s.config.Objects,
+		s.config.MetricsPort, s.config.GRPCPort, s.config.Objects,
 		devService, s.Log.With().Str("component", "worker.objects").Logger())
 	if err != nil {
 		log.Debug().Err(err).Msg("objects.NewService failed")
