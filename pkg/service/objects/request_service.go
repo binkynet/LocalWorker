@@ -66,8 +66,10 @@ func (s *requestService) Run(ctx context.Context, moduleID string, nwControlClie
 				if util.IsStreamClosed(err) || ctx.Err() != nil {
 					return nil
 				} else if err != nil {
+					watchBinaryOutputErrorsReceivedTotal.Inc()
 					log.Warn().Err(err).Msg("Recv(Output) failed")
 				} else {
+					watchBinaryOutputMessagesReceivedTotal.WithLabelValues(string(msg.Address)).Inc()
 					s.outputRequests.Pub(*msg)
 				}
 			}
@@ -89,8 +91,10 @@ func (s *requestService) Run(ctx context.Context, moduleID string, nwControlClie
 				if util.IsStreamClosed(err) || ctx.Err() != nil {
 					return nil
 				} else if err != nil {
+					watchSwitchErrorsReceivedTotal.Inc()
 					log.Warn().Err(err).Msg("Recv(Switch) failed")
 				} else {
+					watchSwitchMessagesReceivedTotal.WithLabelValues(string(msg.Address)).Inc()
 					s.switchRequests.Pub(*msg)
 				}
 			}

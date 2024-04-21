@@ -37,6 +37,13 @@ var (
 		"Number of configured objects")
 
 	// Binary output metrics
+	watchBinaryOutputErrorsReceivedTotal = metrics.MustRegisterCounter(subSystem,
+		"watch_binary_output_errors_received_total",
+		"Number errors during watch binary output received")
+	watchBinaryOutputMessagesReceivedTotal = metrics.MustRegisterCounterVec(subSystem,
+		"watch_binary_output_messages_received_total",
+		"Number of watch binary output messages received",
+		"id")
 	binaryOutputRequestsTotal = metrics.MustRegisterCounterVec(subSystem,
 		"binary_output_requests_total",
 		"Number of binary output requests",
@@ -61,6 +68,13 @@ var (
 		"id")
 
 	// Switch metrics
+	watchSwitchErrorsReceivedTotal = metrics.MustRegisterCounter(subSystem,
+		"watch_switch_errors_received_total",
+		"Number errors during watch switch received")
+	watchSwitchMessagesReceivedTotal = metrics.MustRegisterCounterVec(subSystem,
+		"watch_switch_messages_received_total",
+		"Number of watch switch messages received",
+		"id")
 	switchDirectionRequestsTotal = metrics.MustRegisterCounterVec(subSystem,
 		"switch_direction_requests_total",
 		"Number of switch direction requests",
