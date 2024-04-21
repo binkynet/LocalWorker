@@ -28,6 +28,7 @@ import (
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/intf"
 	"github.com/binkynet/LocalWorker/pkg/service/ncs"
 	grpcutil "github.com/binkynet/LocalWorker/pkg/service/util"
 )
@@ -54,11 +55,12 @@ type service struct {
 	Config
 	Dependencies
 
-	mutex     sync.Mutex
-	hostID    string
-	ncsCancel func()
-	shutdown  bool
-	startedAt time.Time
+	mutex             sync.Mutex
+	hostID            string
+	ncsCancel         func()
+	shutdown          bool
+	startedAt         time.Time
+	getRequestService intf.GetRequestService
 
 	nwControlListener *discovery.ServiceListener
 	lokiListener      *discovery.ServiceListener
@@ -158,8 +160,14 @@ func (s *service) Run(ctx context.Context) {
 			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
 				s.MetricsPort, s.GRPCPort,
 				s.timeOffsetChanges, s.Bridge, nwControlClient)
+			s.mutex.Lock()
+			s.getRequestService = ncs
+			s.mutex.Unlock()
 			runErr := ncs.Run(ncsCtx)
 			ncsCancel()
+			s.mutex.Lock()
+			s.getRequestService = nil
+			s.mutex.Unlock()
 			if runErr != nil {
 				log.Debug().Err(runErr).Msg("ncs.Run failed")
 			}
@@ -181,19 +189,6 @@ func (s *service) Run(ctx context.Context) {
 			return
 		}
 	}
-}
-
-// Reset the local worker
-func (s *service) Reset(context.Context, *api.Empty) (*api.Empty, error) {
-	log := s.Logger
-	go func() {
-		log.Warn().Msg("About to reset process")
-		time.Sleep(time.Second * 5)
-		// Do actual exit
-		log.Warn().Msg("Resetting process")
-		os.Exit(1)
-	}()
-	return &api.Empty{}, nil
 }
 
 // NetworkControlService has changed

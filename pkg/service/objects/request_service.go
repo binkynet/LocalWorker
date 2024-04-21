@@ -22,25 +22,33 @@ import (
 
 	"github.com/mattn/go-pubsub"
 	"github.com/rs/zerolog"
-	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
-
-	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
+type requestService interface {
+	// Run the service until the given context is canceled
+	Run(ctx context.Context, moduleID string, nwControlClient api.NetworkControlServiceClient) error
+
+	// Set the requested output state
+	SetOutputRequest(context.Context, *api.Output) error
+	// Set the requested switch state
+	SetSwitchRequest(context.Context, *api.Switch) error
+
+	RegisterOutputRequestReceiver(cb func(api.Output) error) context.CancelFunc
+	RegisterSwitchRequestReceiver(cb func(api.Switch) error) context.CancelFunc
+}
+
 // RequestService is used by object types to receive requests from the network master.
-type requestService struct {
+type requestServiceImpl struct {
 	log            zerolog.Logger
 	outputRequests *pubsub.PubSub
-	sensorRequests *pubsub.PubSub
 	switchRequests *pubsub.PubSub
 }
 
 // newRequestService creates a new RequestService.
-func newRequestService(log zerolog.Logger) *requestService {
-	return &requestService{
+func newRequestService(log zerolog.Logger) requestService {
+	return &requestServiceImpl{
 		log:            log,
 		outputRequests: pubsub.New(),
 		switchRequests: pubsub.New(),
@@ -48,63 +56,24 @@ func newRequestService(log zerolog.Logger) *requestService {
 }
 
 // Run the service until the given context is canceled
-func (s *requestService) Run(ctx context.Context, moduleID string, nwControlClient api.NetworkControlServiceClient) error {
-	log := s.log
-	g, ctx := errgroup.WithContext(ctx)
-	// Receive output requests
-	g.Go(func() error {
-		once := func() error {
-			server, err := nwControlClient.WatchOutputs(ctx, &api.WatchOptions{
-				WatchRequestChanges: true,
-				ModuleId:            moduleID,
-			})
-			if err != nil {
-				return err
-			}
-			for {
-				msg, err := server.Recv()
-				if util.IsStreamClosed(err) || ctx.Err() != nil {
-					return nil
-				} else if err != nil {
-					watchBinaryOutputErrorsReceivedTotal.Inc()
-					log.Warn().Err(err).Msg("Recv(Output) failed")
-				} else {
-					watchBinaryOutputMessagesReceivedTotal.WithLabelValues(string(msg.Address)).Inc()
-					s.outputRequests.Pub(*msg)
-				}
-			}
-		}
-		return utils.UntilCanceled(ctx, log, "receiveOutputRequests", once)
-	})
-	// Receive switch requests
-	g.Go(func() error {
-		once := func() error {
-			server, err := nwControlClient.WatchSwitches(ctx, &api.WatchOptions{
-				WatchRequestChanges: true,
-				ModuleId:            moduleID,
-			})
-			if err != nil {
-				return err
-			}
-			for {
-				msg, err := server.Recv()
-				if util.IsStreamClosed(err) || ctx.Err() != nil {
-					return nil
-				} else if err != nil {
-					watchSwitchErrorsReceivedTotal.Inc()
-					log.Warn().Err(err).Msg("Recv(Switch) failed")
-				} else {
-					watchSwitchMessagesReceivedTotal.WithLabelValues(string(msg.Address)).Inc()
-					s.switchRequests.Pub(*msg)
-				}
-			}
-		}
-		return utils.UntilCanceled(ctx, log, "receiveSwitchRequests", once)
-	})
-	return g.Wait()
+func (s *requestServiceImpl) Run(ctx context.Context, moduleID string, nwControlClient api.NetworkControlServiceClient) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
-func (s *requestService) RegisterOutputRequestReceiver(cb func(api.Output) error) context.CancelFunc {
+// Set the requested output state
+func (s *requestServiceImpl) SetOutputRequest(ctx context.Context, msg *api.Output) error {
+	s.outputRequests.Pub(*msg)
+	return nil
+}
+
+// Set the requested switch state
+func (s *requestServiceImpl) SetSwitchRequest(ctx context.Context, msg *api.Switch) error {
+	s.switchRequests.Pub(*msg)
+	return nil
+}
+
+func (s *requestServiceImpl) RegisterOutputRequestReceiver(cb func(api.Output) error) context.CancelFunc {
 	wcb := func(x api.Output) {
 		if err := cb(x); err != nil {
 			s.log.Warn().Err(err).Msg("Output processing error")
@@ -116,7 +85,7 @@ func (s *requestService) RegisterOutputRequestReceiver(cb func(api.Output) error
 	}
 }
 
-func (s *requestService) RegisterSwitchRequestReceiver(cb func(api.Switch) error) context.CancelFunc {
+func (s *requestServiceImpl) RegisterSwitchRequestReceiver(cb func(api.Switch) error) context.CancelFunc {
 	wcb := func(x api.Switch) {
 		if err := cb(x); err != nil {
 			s.log.Warn().Err(err).Msg("Switch processing error")

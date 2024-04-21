@@ -12,6 +12,7 @@ import (
 
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
 	"github.com/binkynet/LocalWorker/pkg/service/devices"
+	"github.com/binkynet/LocalWorker/pkg/service/intf"
 	"github.com/binkynet/LocalWorker/pkg/service/objects"
 )
 
@@ -19,6 +20,7 @@ import (
 type Service interface {
 	// Run the worker service until the given context is cancelled.
 	Run(ctx context.Context) error
+	intf.GetRequestService
 }
 
 type Config struct {
@@ -132,5 +134,12 @@ func (s *service) Run(ctx context.Context) error {
 		return errors.Wrap(err, "Wait failed")
 	}
 
+	return nil
+}
+
+func (s *service) GetRequestService() intf.RequestService {
+	if os := s.objService; os != nil {
+		return os
+	}
 	return nil
 }

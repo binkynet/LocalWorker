@@ -28,6 +28,7 @@ import (
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
+	"github.com/binkynet/LocalWorker/pkg/service/intf"
 )
 
 // NetworkControlService runs a sequence of zero or more
@@ -35,6 +36,7 @@ import (
 type NetworkControlService interface {
 	// Run workers until the given context is canceled.
 	Run(context.Context) error
+	intf.GetRequestService
 }
 
 // NewNetworkControlService constructs a new network control service for the given
@@ -75,6 +77,7 @@ type networkControlService struct {
 	timeOffsetChanges chan int64
 	bridge            bridge.API
 	nwControlClient   api.NetworkControlServiceClient
+	getrequestService intf.GetRequestService
 }
 
 var (
@@ -150,4 +153,12 @@ func (ncs *networkControlService) Run(ctx context.Context) error {
 	})
 
 	return g.Wait()
+}
+
+// Get access to the current request service
+func (ncs *networkControlService) GetRequestService() intf.RequestService {
+	if grs := ncs.getrequestService; grs != nil {
+		return grs.GetRequestService()
+	}
+	return nil
 }

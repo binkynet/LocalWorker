@@ -31,5 +31,22 @@ var (
 	networkControlServiceChangesTotal = metrics.MustRegisterCounter(subSystem,
 		"network_control_service_changes_total",
 		"Total number of changes in network control service detected")
-	// Total number of workers created
+	// Total number of SetPowerRequest calls
+	setPowerRequestTotal = metrics.MustRegisterCounter(subSystem,
+		"service_api_set_power_request_total",
+		"Total number of SetPowerRequest calls")
+	// Total number of SetLocRequest calls
+	setLocRequestTotal = metrics.MustRegisterCounter(subSystem,
+		"service_api_set_loc_request_total",
+		"Total number of SetLocRequest calls")
+	// Total number of SetOutputRequest calls per output ID
+	setOutputRequestTotal = metrics.MustRegisterCounterVec(subSystem,
+		"service_api_set_output_request_total",
+		"Total number of SetOutputRequest calls per ID",
+		"id")
+	// Total number of SetSwitchRequest calls per switch ID
+	setSwitchRequestTotal = metrics.MustRegisterCounterVec(subSystem,
+		"service_api_set_switch_request_total",
+		"Total number of SetSwitchRequest calls per ID",
+		"id")
 )

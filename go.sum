@@ -11,6 +11,8 @@ github.com/binkynet/BinkyNet v1.8.0 h1:50y3nPtaE7hTM9rBkJDMzWADLXnePaoDbg+jP/5w6
 github.com/binkynet/BinkyNet v1.8.0/go.mod h1:IGWTutjIzojoVPxVXRc1Ts1bAfyGxKw16u+zL4rqS1Q=
 github.com/binkynet/BinkyNet v1.10.0 h1:criSTLSy81fGUbD1RXarsXD1+RKtiqBvczlcmfsFi6k=
 github.com/binkynet/BinkyNet v1.10.0/go.mod h1:IGWTutjIzojoVPxVXRc1Ts1bAfyGxKw16u+zL4rqS1Q=
+github.com/binkynet/BinkyNet v1.11.0 h1:fjwi3bdekCRwbc5WpLTt9/J4IIPv1/BR2wz2ZQLs5vY=
+github.com/binkynet/BinkyNet v1.11.0/go.mod h1:IGWTutjIzojoVPxVXRc1Ts1bAfyGxKw16u+zL4rqS1Q=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=

@@ -141,6 +141,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 			// Wait a bit and then retry
 		} else {
 			// Run worker
+			ncs.getrequestService = w
 			log.Debug().Msg("start to run worker...")
 			if err := w.Run(ctx); ctx.Err() != nil {
 				log.Info().Msg("Worker ended with context cancellation")
@@ -150,6 +151,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 			} else {
 				log.Info().Err(err).Msg("Worker ended without context cancellation")
 			}
+			ncs.getrequestService = nil
 		}
 		select {
 		case <-ctx.Done():

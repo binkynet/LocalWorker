@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -28,8 +29,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/binkynet/BinkyNet/apis/util"
+	api "github.com/binkynet/BinkyNet/apis/v1"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/pkg/service/devices"
+	"github.com/binkynet/LocalWorker/pkg/service/intf"
 	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
@@ -42,6 +45,7 @@ type Service interface {
 	Configure(ctx context.Context) error
 	// Run all required topics until the given context is cancelled.
 	Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error
+	intf.RequestService
 }
 
 type service struct {
@@ -54,6 +58,7 @@ type service struct {
 	metricsPort       int
 	grpcPort          int
 	log               zerolog.Logger
+	requestService    requestService
 }
 
 const (
@@ -171,6 +176,7 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 
 	// Create request/status services
 	requests := newRequestService(s.log)
+	s.requestService = requests
 	statuses := newStatusService(s.log)
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -255,6 +261,38 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 	return nil
 }
 
+// Set the requested power state
+func (s *service) SetPowerRequest(ctx context.Context, msg *api.PowerState) error {
+	log := s.log
+	log.Debug().Bool("enabled", msg.GetEnabled()).Msg("Receiver power request")
+	req := *msg
+	for _, obj := range s.configuredObjects {
+		// Run the object itself
+		go func(obj Object, msg api.PowerState) {
+			if err := obj.ProcessPowerMessage(ctx, msg); err != nil {
+				log.Info().Err(err).Msg("Object failed to process PowerMessage")
+			}
+		}(obj, req)
+	}
+	return nil
+}
+
+// Set the requested output state
+func (s *service) SetOutputRequest(ctx context.Context, msg *api.Output) error {
+	if rs := s.requestService; rs != nil {
+		return rs.SetOutputRequest(ctx, msg)
+	}
+	return fmt.Errorf("not ready yet")
+}
+
+// Set the requested switch state
+func (s *service) SetSwitchRequest(ctx context.Context, msg *api.Switch) error {
+	if rs := s.requestService; rs != nil {
+		return rs.SetSwitchRequest(ctx, msg)
+	}
+	return fmt.Errorf("not ready yet")
+}
+
 // sendPingMessages keeps sending ping messages until the given context is canceled.
 func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) {
 	log := s.log
@@ -273,6 +311,11 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 			MetricsSecure:            false,
 			LocalWorkerServicePort:   int32(s.grpcPort),
 			LocalWorkerServiceSecure: false,
+			SupportsReset:            true,
+			SupportsSetLocRequest:    false,
+			SupportsSetPowerRequest:  true,
+			SupportsSetOutputRequest: true,
+			SupportsSetSwitchRequest: true,
 		},
 	}
 	lastPingLog := time.Now()
@@ -352,13 +395,14 @@ func (s *service) receivePowerMessages(ctx context.Context, nwControlClient mode
 			}
 			// Process power request
 			log.Debug().Bool("enabled", msg.GetRequest().GetEnabled()).Msg("Receiver power request")
+			req := *msg.GetRequest()
 			for _, obj := range s.configuredObjects {
 				// Run the object itself
-				go func(obj Object) {
-					if err := obj.ProcessPowerMessage(ctx, *msg.GetRequest()); err != nil {
+				go func(obj Object, msg api.PowerState) {
+					if err := obj.ProcessPowerMessage(ctx, msg); err != nil {
 						log.Info().Err(err).Msg("Object failed to process PowerMessage")
 					}
-				}(obj)
+				}(obj, req)
 			}
 		}
 	}
