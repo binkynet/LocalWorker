@@ -283,10 +283,10 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 		msg.Actual.ConfiguredObjectIds = s.getConfiguredObjectIDs()
 		msg.Actual.UnconfiguredDeviceIds = s.devService.GetUnconfiguredDeviceIDs()
 		msg.Actual.UnconfiguredObjectIds = s.getUnconfiguredObjectIDs()
-		delay := time.Second * 15
+		delay := time.Second * 5
 		if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
 			log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
-			delay = time.Second * 5
+			delay = time.Second * 3
 		} else {
 			if time.Since(lastPingLog) > pingLogInterval {
 				log.Debug().Msg("Ping sent")
