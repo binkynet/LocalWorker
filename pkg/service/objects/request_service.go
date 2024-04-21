@@ -27,9 +27,6 @@ import (
 )
 
 type requestService interface {
-	// Run the service until the given context is canceled
-	Run(ctx context.Context, moduleID string, nwControlClient api.NetworkControlServiceClient) error
-
 	// Set the requested output state
 	SetOutputRequest(context.Context, *api.Output) error
 	// Set the requested switch state
@@ -53,12 +50,6 @@ func newRequestService(log zerolog.Logger) requestService {
 		outputRequests: pubsub.New(),
 		switchRequests: pubsub.New(),
 	}
-}
-
-// Run the service until the given context is canceled
-func (s *requestServiceImpl) Run(ctx context.Context, moduleID string, nwControlClient api.NetworkControlServiceClient) error {
-	<-ctx.Done()
-	return ctx.Err()
 }
 
 // Set the requested output state

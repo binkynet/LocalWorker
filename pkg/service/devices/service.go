@@ -28,11 +28,10 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
+	api "github.com/binkynet/BinkyNet/apis/v1"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
-	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 // Service contains the API that is exposed by the device service.
@@ -50,6 +49,8 @@ type Service interface {
 	GetConfiguredDeviceIDs() []string
 	// Get a list of unconfigured device IDs
 	GetUnconfiguredDeviceIDs() []string
+	// Perform a single device discovery
+	PerformDeviceDiscovery(ctx context.Context, req *api.DeviceDiscovery) error
 }
 
 type service struct {
@@ -62,6 +63,7 @@ type service struct {
 	bus               bridge.I2CBus
 	bAPI              bridge.API
 	activeCount       uint32
+	nwControlClient   model.NetworkControlServiceClient
 }
 
 // NewService instantiates a new Service and Device's for the given
@@ -137,8 +139,8 @@ func (s *service) Configure(ctx context.Context) error {
 
 // Run the service until the given context is canceled.
 func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
+	s.nwControlClient = nwControlClient
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return s.receiveDiscoverMessages(ctx, nwControlClient) })
 	g.Go(func() error { return s.runActiveNotify(ctx) })
 	return g.Wait()
 }
@@ -184,49 +186,28 @@ func (s *service) runActiveNotify(ctx context.Context) error {
 	}
 }
 
-// Run subscribed to discover messages and processed them
-// until the given context is cancelled.
-func (s *service) receiveDiscoverMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
+// Perform a single device discovery
+func (s *service) PerformDeviceDiscovery(ctx context.Context, req *api.DeviceDiscovery) error {
 	log := s.log
-	once := func() error {
-		log.Debug().Msg("Opening GetDiscoverRequests stream...")
-		stream, err := nwControlClient.WatchDeviceDiscoveries(ctx, &model.WatchOptions{
-			ModuleId: s.hardwareID,
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to request discover messages")
+	// Process discover request
+	log.Debug().Msg("Received discover request")
+
+	addrs := s.bus.DetectSlaveAddresses()
+	result := &model.DiscoverResult{
+		Id: s.moduleID,
+	}
+	for _, addr := range addrs {
+		result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
+	}
+	log.Info().Strs("addresses", result.GetAddresses()).Msg("Discovered addresses")
+	req.Actual = result
+	if client := s.nwControlClient; client != nil {
+		if _, err := client.SetDeviceDiscoveryActual(ctx, req); err != nil {
+			log.Warn().Err(err).Msg("SetDeviceDiscoveryActual failed")
 			return err
 		}
-		defer stream.CloseSend()
-		for {
-			log.Debug().Msg("Waiting to receive discover request...")
-			req, err := stream.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				log.Info().Msg("Stream closed or context canceled")
-				return nil
-			} else if err != nil {
-				log.Warn().Err(err).Msg("Recv failed")
-				return err
-			}
-			// Process discover request
-			log.Debug().Msg("Received discover request")
-
-			addrs := s.bus.DetectSlaveAddresses()
-			result := &model.DiscoverResult{
-				Id: s.moduleID,
-			}
-			for _, addr := range addrs {
-				result.Addresses = append(result.Addresses, fmt.Sprintf("0x%x", addr))
-			}
-			log.Info().Strs("addresses", result.GetAddresses()).Msg("Discovered addresses")
-			req.Actual = result
-			if _, err := nwControlClient.SetDeviceDiscoveryActual(ctx, req); err != nil {
-				log.Warn().Err(err).Msg("SetDeviceDiscoveryActual failed")
-				return err
-			}
-		}
 	}
-	return utils.UntilCanceled(ctx, log, "receiveDiscoverMessages", once)
+	return nil
 }
 
 // Get a list of configured device IDs

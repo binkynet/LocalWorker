@@ -113,3 +113,26 @@ func (s *service) SetSwitchRequest(ctx context.Context, msg *api.Switch) (*api.E
 	}
 	return &api.Empty{}, err
 }
+
+// Set the requested switch state
+func (s *service) SetDeviceDiscoveryRequest(ctx context.Context, msg *api.DeviceDiscovery) (*api.Empty, error) {
+	setDeviceDiscoveryRequestTotal.Inc()
+	log := s.Logger
+	s.mutex.Lock()
+	grs := s.getRequestService
+	s.mutex.Unlock()
+
+	var err error
+	if grs != nil {
+		if rs := grs.GetRequestService(); rs != nil {
+			err = rs.SetDeviceDiscoveryRequest(ctx, msg)
+		} else {
+			err = fmt.Errorf("request service not available")
+			log.Error().Msg("request service not available in SetDeviceDiscoveryRequest")
+		}
+	} else {
+		err = fmt.Errorf("get request service not available")
+		log.Error().Msg("get request service not available in SetDeviceDiscoveryRequest")
+	}
+	return &api.Empty{}, err
+}

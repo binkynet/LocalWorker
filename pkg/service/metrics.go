@@ -49,4 +49,8 @@ var (
 		"service_api_set_switch_request_total",
 		"Total number of SetSwitchRequest calls per ID",
 		"id")
+	// Total number of SetDeviceDiscoveryRequest calls
+	setDeviceDiscoveryRequestTotal = metrics.MustRegisterCounter(subSystem,
+		"service_api_set_device_discovery_request_total",
+		"Total number of SetSwitchRequest calls")
 )

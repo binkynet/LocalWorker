@@ -13,6 +13,8 @@ type RequestService interface {
 	SetOutputRequest(context.Context, *api.Output) error
 	// Set the requested switch state
 	SetSwitchRequest(context.Context, *api.Switch) error
+	// Set the requested device discovery state
+	SetDeviceDiscoveryRequest(context.Context, *api.DeviceDiscovery) error
 }
 
 type GetRequestService interface {

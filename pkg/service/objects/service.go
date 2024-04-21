@@ -28,12 +28,10 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/binkynet/BinkyNet/apis/util"
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/pkg/service/devices"
 	"github.com/binkynet/LocalWorker/pkg/service/intf"
-	utils "github.com/binkynet/LocalWorker/pkg/service/util"
 )
 
 // Service contains the API that is exposed by the object service.
@@ -180,14 +178,10 @@ func (s *service) Run(ctx context.Context, nwControlClient model.NetworkControlS
 	statuses := newStatusService(s.log)
 
 	g, ctx := errgroup.WithContext(ctx)
-	// Run requests
-	g.Go(func() error { return requests.Run(ctx, s.moduleID, nwControlClient) })
 	// Run statuses
 	g.Go(func() error { return statuses.Run(ctx, nwControlClient) })
 	// Keep sending ping messages
 	g.Go(func() error { s.sendPingMessages(ctx, nwControlClient); return nil })
-	// Receive power messages
-	g.Go(func() error { s.receivePowerMessages(ctx, nwControlClient); return nil })
 
 	// Run all objects & object types.
 	visitedTypes := make(map[ObjectType]struct{})
@@ -293,6 +287,11 @@ func (s *service) SetSwitchRequest(ctx context.Context, msg *api.Switch) error {
 	return fmt.Errorf("not ready yet")
 }
 
+// Set the requested device discovery state
+func (s *service) SetDeviceDiscoveryRequest(ctx context.Context, msg *api.DeviceDiscovery) error {
+	return s.devService.PerformDeviceDiscovery(ctx, msg)
+}
+
 // sendPingMessages keeps sending ping messages until the given context is canceled.
 func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) {
 	log := s.log
@@ -303,19 +302,20 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 	msg := model.LocalWorker{
 		Id: s.moduleID,
 		Actual: &model.LocalWorkerInfo{
-			Id:                       s.moduleID,
-			Description:              "Local worker",
-			Version:                  s.programVersion,
-			Uptime:                   int64(time.Since(s.startTime).Seconds()),
-			MetricsPort:              int32(s.metricsPort),
-			MetricsSecure:            false,
-			LocalWorkerServicePort:   int32(s.grpcPort),
-			LocalWorkerServiceSecure: false,
-			SupportsReset:            true,
-			SupportsSetLocRequest:    false,
-			SupportsSetPowerRequest:  true,
-			SupportsSetOutputRequest: true,
-			SupportsSetSwitchRequest: true,
+			Id:                                s.moduleID,
+			Description:                       "Local worker",
+			Version:                           s.programVersion,
+			Uptime:                            int64(time.Since(s.startTime).Seconds()),
+			MetricsPort:                       int32(s.metricsPort),
+			MetricsSecure:                     false,
+			LocalWorkerServicePort:            int32(s.grpcPort),
+			LocalWorkerServiceSecure:          false,
+			SupportsReset:                     true,
+			SupportsSetLocRequest:             false,
+			SupportsSetPowerRequest:           true,
+			SupportsSetOutputRequest:          true,
+			SupportsSetSwitchRequest:          true,
+			SupportsSetDeviceDiscoveryRequest: true,
 		},
 	}
 	lastPingLog := time.Now()
@@ -370,41 +370,4 @@ func (s *service) getUnconfiguredObjectIDs() []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-// Run subscribes to the intended topic and process incoming messages
-// until the given context is cancelled.
-func (s *service) receivePowerMessages(ctx context.Context, nwControlClient model.NetworkControlServiceClient) error {
-	log := s.log
-	once := func() error {
-		stream, err := nwControlClient.WatchPower(ctx, &model.WatchOptions{
-			WatchRequestChanges: true,
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to request power messages")
-			return err
-		}
-		defer stream.CloseSend()
-		for {
-			msg, err := stream.Recv()
-			if util.IsStreamClosed(err) || ctx.Err() != nil {
-				return nil
-			} else if err != nil {
-				log.Warn().Err(err).Msg("Recv failed")
-				return err
-			}
-			// Process power request
-			log.Debug().Bool("enabled", msg.GetRequest().GetEnabled()).Msg("Receiver power request")
-			req := *msg.GetRequest()
-			for _, obj := range s.configuredObjects {
-				// Run the object itself
-				go func(obj Object, msg api.PowerState) {
-					if err := obj.ProcessPowerMessage(ctx, msg); err != nil {
-						log.Info().Err(err).Msg("Object failed to process PowerMessage")
-					}
-				}(obj, req)
-			}
-		}
-	}
-	return utils.UntilCanceled(ctx, log, "receivePowerMessages", once)
 }

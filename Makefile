@@ -23,9 +23,7 @@ bootstrap:
 	docker build -t u-root-builder -f Dockerfile.u-root .
 	docker build -t mkimage-builder -f Dockerfile.mkimage .
 
-binaries: $(BINARIES)
-
-$(BINARIES): $(SOURCES)
+binaries: 
 	CGO_ENABLED=0 gox \
 		-osarch="linux/amd64 linux/arm darwin/amd64 darwin/arm64" \
 		-ldflags="-X main.projectVersion=$(VERSION) -X main.projectBuild=$(COMMIT)" \
