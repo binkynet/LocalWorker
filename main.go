@@ -20,6 +20,8 @@ import (
 	"os"
 	"time"
 
+	_ "net/http/pprof"
+
 	terminate "github.com/pulcy/go-terminate"
 	"github.com/rs/zerolog"
 	"github.com/spf13/pflag"
@@ -37,7 +39,7 @@ import (
 
 const (
 	projectName          = "BinkyNet Local Worker"
-	staticProjectVersion = "1.4.0"
+	staticProjectVersion = "1.5.0"
 	defaultGrpcPort      = 7129
 	defaultHTTPPort      = 7130
 	defaultSSHPort       = 7777

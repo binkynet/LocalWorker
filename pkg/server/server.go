@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"strconv"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
@@ -94,6 +95,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Prepare HTTP server
 	httpRouter := echo.New()
 	httpRouter.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
+	httpRouter.GET("/debug/pprof/*", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
 	httpSrv := http.Server{
 		Handler: httpRouter,
 	}
