@@ -252,10 +252,12 @@ func (d *binkyCarSensor) MaxPWMValue() uint32 {
 func (d *binkyCarSensor) SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled bool) error {
 	ioIndex := byte(output - 1)
 	value := uint8(offValue / 16)
-	d.log.Debug().
-		Uint8("ioIndex", ioIndex).
-		Uint8("value", value).
-		Msg("SetPWM")
+	if false {
+		d.log.Debug().
+			Uint8("ioIndex", ioIndex).
+			Uint8("value", value).
+			Msg("SetPWM")
+	}
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
 		if err := dev.WriteByteReg(RegConfigurePWM0+ioIndex, value); err != nil {
 			return err
