@@ -113,6 +113,17 @@ func (s *service) Run(ctx context.Context) error {
 	// Run devices & objects
 	g, lctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
+		// Broadcast service info
+		sb := model.NewServiceBroadcaster(log, "",
+			model.ServiceTypePrometheusProvider, model.ServiceInfo{
+				ApiVersion:   "v1",
+				ApiPort:      int32(s.config.MetricsPort),
+				Secure:       false,
+				ProviderName: s.config.ModuleID,
+			})
+		return sb.Run(ctx)
+	})
+	g.Go(func() error {
 		log.Debug().Msg("run devices")
 		if err := devService.Run(lctx, s.NwControlClient); err != nil {
 			log.Error().Err(err).Msg("Run devices failed")
