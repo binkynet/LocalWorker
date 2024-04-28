@@ -149,6 +149,16 @@ func main() {
 
 	fmt.Printf("Starting %s (version %s build %s)\n", projectName, projectVersion, projectBuild)
 	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		// Broadcast service info
+		sb := api.NewServiceBroadcaster(logger, serverHost,
+			api.ServiceTypePrometheusProvider, api.ServiceInfo{
+				ApiVersion: "v1",
+				ApiPort:    int32(httpPort),
+				Secure:     false,
+			})
+		return sb.Run(ctx)
+	})
 	g.Go(func() error { svc.Run(ctx); return nil })
 	g.Go(func() error { return srv.Run(ctx) })
 	if err := g.Wait(); err != nil {
