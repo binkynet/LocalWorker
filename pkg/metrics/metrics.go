@@ -70,3 +70,15 @@ func MustRegisterGaugeVec(subSubsystem, name, help string, labels ...string) *pr
 	prometheus.MustRegister(c)
 	return c
 }
+
+// MustRegisterHistogram creates and registers a histogram with given subSystem & name.
+func MustRegisterHistogram(subSubsystem, name, help string) prometheus.Histogram {
+	c := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: namespace,
+		Subsystem: subSubsystem,
+		Name:      name,
+		Help:      help,
+	})
+	prometheus.MustRegister(c)
+	return c
+}

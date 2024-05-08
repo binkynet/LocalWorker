@@ -25,12 +25,12 @@ const (
 var (
 	// Total number of times I2CBus.Execute is called
 	i2cExecuteCounters = metrics.MustRegisterCounterVec(subSystem,
-		"execute_total",
+		"i2c_execute_total",
 		"Total number of times I2CBus.Execute is called",
 		"address")
 	// Total number of times I2CBus.Execute failed
 	i2cExecuteErrorCounters = metrics.MustRegisterCounterVec(subSystem,
-		"execute_error_total",
+		"i2c_execute_error_total",
 		"Total number of times I2CBus.Execute failed",
 		"address")
 )
