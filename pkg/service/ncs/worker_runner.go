@@ -131,6 +131,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 			ModuleID:          moduleID,
 			MetricsPort:       ncs.metricsPort,
 			GRPCPort:          ncs.grpcPort,
+			SSHPort:           ncs.sshPort,
 		}, worker.Dependencies{
 			Log:             log,
 			Bridge:          ncs.bridge,

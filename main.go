@@ -28,7 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
-	"github.com/binkynet/BinkyNet/netlog"
+	"github.com/binkynet/BinkyNet/sshlog"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
 	"github.com/binkynet/LocalWorker/pkg/server"
@@ -42,7 +42,7 @@ const (
 	staticProjectVersion = "1.5.0"
 	defaultGrpcPort      = 7129
 	defaultHTTPPort      = 7130
-	defaultSSHPort       = 7777
+	defaultSSHPort       = 7122
 )
 
 var (
@@ -59,15 +59,11 @@ func main() {
 	var sshPort int
 
 	lokiLogger := service.NewLokiLogger()
-	logWriter, err := netlog.NewLogger()
-	if err != nil {
-		defaultLogger := zerolog.New(os.Stdout)
-		Exitf(defaultLogger, "Failed to create log writer: %s", err)
-	}
+	sshLogger := sshlog.NewSshLogger()
 	logOutput := zerolog.MultiLevelWriter(
 		zerolog.ConsoleWriter{Out: os.Stderr},
 		lokiLogger,
-		logWriter,
+		sshLogger,
 	)
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	logger := zerolog.New(logOutput).With().Timestamp().Logger()
@@ -83,6 +79,7 @@ func main() {
 	pflag.Parse()
 
 	var br bridge.API
+	var err error
 	switch bridgeType {
 	case "rpi":
 		br, err = bridge.NewRaspberryPiBridge()
@@ -120,6 +117,7 @@ func main() {
 		ProgramVersion: version,
 		MetricsPort:    httpPort,
 		GRPCPort:       grpcPort,
+		SSHPort:        sshPort,
 	}, service.Dependencies{
 		Logger:     logger,
 		Bridge:     br,
@@ -134,7 +132,7 @@ func main() {
 		HTTPPort: httpPort,
 		SSHPort:  sshPort,
 		GRPCPort: grpcPort,
-	}, logger, uiProv, svc)
+	}, logger, sshLogger, uiProv, svc)
 	if err != nil {
 		Exitf(logger, "Failed to initialize Server: %v\n", err)
 	}

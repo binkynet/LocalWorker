@@ -55,6 +55,7 @@ type service struct {
 	programVersion    string
 	metricsPort       int
 	grpcPort          int
+	sshPort           int
 	log               zerolog.Logger
 	requestService    requestService
 }
@@ -66,7 +67,7 @@ const (
 
 // NewService instantiates a new Service and Object's for the given
 // object configurations.
-func NewService(moduleID string, programVersion string, metricsPort, grpcPort int, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
+func NewService(moduleID string, programVersion string, metricsPort, grpcPort, sshPort int, configs []*model.Object, devService devices.Service, log zerolog.Logger) (Service, error) {
 	s := &service{
 		startTime:         time.Now(),
 		moduleID:          moduleID,
@@ -76,6 +77,7 @@ func NewService(moduleID string, programVersion string, metricsPort, grpcPort in
 		programVersion:    programVersion,
 		metricsPort:       metricsPort,
 		grpcPort:          grpcPort,
+		sshPort:           sshPort,
 		log:               log.With().Str("component", "object-service").Logger(),
 	}
 	for _, c := range configs {
@@ -308,6 +310,7 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 			Uptime:                            int64(time.Since(s.startTime).Seconds()),
 			MetricsPort:                       int32(s.metricsPort),
 			MetricsSecure:                     false,
+			SshPort:                           int32(s.sshPort),
 			LocalWorkerServicePort:            int32(s.grpcPort),
 			LocalWorkerServiceSecure:          false,
 			SupportsReset:                     true,

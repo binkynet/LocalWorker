@@ -43,6 +43,7 @@ type Config struct {
 	ProgramVersion string
 	MetricsPort    int
 	GRPCPort       int
+	SSHPort        int
 }
 
 type Dependencies struct {
@@ -158,7 +159,7 @@ func (s *service) Run(ctx context.Context) {
 			s.ncsCancel = ncsCancel
 			s.mutex.Unlock()
 			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
-				s.MetricsPort, s.GRPCPort,
+				s.MetricsPort, s.GRPCPort, s.SSHPort,
 				s.timeOffsetChanges, s.Bridge, nwControlClient)
 			s.mutex.Lock()
 			s.getRequestService = ncs

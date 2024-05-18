@@ -26,11 +26,13 @@ import (
 	"strconv"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
+	"github.com/binkynet/BinkyNet/sshlog"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
-	bm "github.com/charmbracelet/wish/bubbletea"
-	lm "github.com/charmbracelet/wish/logging"
+	"github.com/charmbracelet/wish/activeterm"
+	"github.com/charmbracelet/wish/bubbletea"
+	"github.com/charmbracelet/wish/logging"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -54,9 +56,10 @@ type Config struct {
 // Server runs the HTTP server for the service.
 type Server struct {
 	Config
-	log     zerolog.Logger
-	ui      UI
-	service Service
+	log       zerolog.Logger
+	ui        UI
+	service   Service
+	sshLogger *sshlog.SSHLogger
 }
 
 type UI interface {
@@ -73,12 +76,13 @@ type Service interface {
 }
 
 // New configures a new Server.
-func New(cfg Config, log zerolog.Logger, ui UI, service Service) (*Server, error) {
+func New(cfg Config, log zerolog.Logger, sshLogger *sshlog.SSHLogger, ui UI, service Service) (*Server, error) {
 	return &Server{
-		Config:  cfg,
-		log:     log,
-		ui:      ui,
-		service: service,
+		Config:    cfg,
+		log:       log,
+		ui:        ui,
+		service:   service,
+		sshLogger: sshLogger,
 	}, nil
 }
 
@@ -100,20 +104,6 @@ func (s *Server) Run(ctx context.Context) error {
 		Handler: httpRouter,
 	}
 
-	// Prepare SSH server
-	sshAddr := net.JoinHostPort(s.Host, strconv.Itoa(s.SSHPort))
-	sshSrv, err := wish.NewServer(
-		wish.WithAddress(sshAddr),
-		//wish.WithHostKeyPath(".ssh/term_info_ed25519"),
-		wish.WithMiddleware(
-			bm.Middleware(s.ui.Handler),
-			lm.Middleware(),
-		),
-	)
-	if err != nil {
-		log.Fatal().Err(err).Msgf("failed to listen on address %s", sshAddr)
-	}
-
 	// Prepare GRPC listener
 	grpcAddr := net.JoinHostPort(s.Host, strconv.Itoa(s.GRPCPort))
 	grpcLis, err := net.Listen("tcp", grpcAddr)
@@ -129,6 +119,30 @@ func (s *Server) Run(ctx context.Context) error {
 	api.RegisterLocalWorkerServiceServer(grpcSrv, s.service)
 	// Register reflection service on gRPC server.
 	reflection.Register(grpcSrv)
+
+	// Prepare SSH server
+	sshAddr := net.JoinHostPort(s.Host, strconv.Itoa(s.SSHPort))
+	sshServer, err := wish.NewServer(
+		// The address the server will listen to.
+		wish.WithAddress(sshAddr),
+
+		// The SSH server need its own keys, this will create a keypair in the
+		// given path if it doesn't exist yet.
+		// By default, it will create an ED25519 key.
+		wish.WithHostKeyPath(".ssh/id_ed25519"),
+
+		// Middlewares do something on a ssh.Session, and then call the next
+		// middleware in the stack.
+		wish.WithMiddleware(
+			bubbletea.Middleware(s.sshLogger.TeaHandler),
+			// The last item in the chain is the first to be called.
+			activeterm.Middleware(),
+			logging.Middleware(),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("could not start SSH server: %w", err)
+	}
 
 	// Serve apis
 	log.Debug().Str("address", httpAddr).Msg("Serving HTTP")
@@ -148,7 +162,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Serve UI
 	log.Debug().Str("address", sshAddr).Msg("Serving SSH")
 	go func() {
-		if err = sshSrv.ListenAndServe(); err != nil {
+		if err = sshServer.ListenAndServe(); err != nil {
 			log.Fatal().Err(err).Msg("failed to serve SSH server")
 		}
 		log.Debug().Str("address", httpAddr).Msg("Done Serving SSH")
@@ -160,7 +174,7 @@ func (s *Server) Run(ctx context.Context) error {
 	log.Info().Msg("Closing servers")
 	httpSrv.Shutdown(context.Background())
 	grpcSrv.GracefulStop()
-	sshSrv.Shutdown(context.Background())
+	sshServer.Shutdown(context.Background())
 
 	return nil
 }
