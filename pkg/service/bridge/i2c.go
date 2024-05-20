@@ -88,9 +88,11 @@ func (b *i2cBus) Execute(ctx context.Context, address uint8, op func(context.Con
 			return nil
 		}
 
-		// Close dev
-		dev.closeFile()
-		delete(b.devices, address)
+		// Device call failed, close all devices
+		for _, d := range b.devices {
+			d.closeFile()
+		}
+		clear(b.devices)
 	}
 	// Return error
 	i2cExecuteErrorCounters.WithLabelValues(strconv.Itoa(int(address))).Inc()
