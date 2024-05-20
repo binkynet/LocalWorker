@@ -22,6 +22,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/pkg/errors"
@@ -30,9 +31,11 @@ import (
 const (
 	// From  /usr/include/linux/i2c-dev.h:
 	// ioctl signals
-	I2C_SLAVE = 0x0703
-	I2C_FUNCS = 0x0705
-	I2C_SMBUS = 0x0720
+	I2C_RETRIES = 0x0701 // number of times a device address should be polled when not acknowledging
+	I2C_TIMEOUT = 0x0702 // set timeout in units of 10 ms
+	I2C_SLAVE   = 0x0703
+	I2C_FUNCS   = 0x0705
+	I2C_SMBUS   = 0x0720
 	// Read/write markers
 	I2C_SMBUS_READ  = 1
 	I2C_SMBUS_WRITE = 0
@@ -70,6 +73,10 @@ const (
 	I2C_SMBUS_I2C_BLOCK_DATA   = 8 /* SMBus 2.0 */
 )
 
+const (
+	defaultI2cTimeout = time.Millisecond * 100
+)
+
 type i2cSmbusIoctlData struct {
 	readWrite byte
 	command   byte
@@ -102,10 +109,14 @@ func newI2CDevice(bus *i2cBus, location string, address uint8) (*i2cDevice, erro
 	if err := d.setAddress(address); err != nil {
 		return nil, err
 	}
+	if err := d.setTimeout(defaultI2cTimeout); err != nil {
+		return nil, err
+	}
 
 	return d, nil
 }
 
+// Query the available functionality on the I2C device interface.
 func (d *i2cDevice) queryFunctionality() (err error) {
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
@@ -115,11 +126,12 @@ func (d *i2cDevice) queryFunctionality() (err error) {
 	)
 
 	if errno != 0 {
-		err = fmt.Errorf("Querying functionality failed with syscall.Errno %v", errno)
+		err = fmt.Errorf("querying functionality failed with syscall.Errno %v", errno)
 	}
 	return
 }
 
+// Sets the I2C address of the slave this device will target.
 func (d *i2cDevice) setAddress(address byte) (err error) {
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
@@ -129,12 +141,30 @@ func (d *i2cDevice) setAddress(address byte) (err error) {
 	)
 
 	if errno != 0 {
-		err = fmt.Errorf("Setting address (0x%0x) failed with syscall.Errno %v", d.address, errno)
+		err = fmt.Errorf("setting address (0x%0x) failed with syscall.Errno %v", d.address, errno)
 	}
 
 	return
 }
 
+// Sets the I2C timeout.
+func (d *i2cDevice) setTimeout(timeout time.Duration) (err error) {
+	in10ms := timeout.Milliseconds() / 10
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		d.file.Fd(),
+		I2C_TIMEOUT,
+		uintptr(in10ms),
+	)
+
+	if errno != 0 {
+		err = fmt.Errorf("setting timeout (%s) failed with syscall.Errno %v", timeout, errno)
+	}
+
+	return
+}
+
+// Close the file description
 func (d *i2cDevice) closeFile() (err error) {
 	if err := d.file.Close(); err != nil {
 		return err
@@ -227,6 +257,7 @@ func (d *i2cDevice) WriteDevice(data []byte) (err error) {
 	return nil
 }
 
+// Perform a quick transaction in the device
 func (d *i2cDevice) quick() (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_QUICK == 0 {
 		return fmt.Errorf("SMBus quick not supported")
@@ -236,6 +267,7 @@ func (d *i2cDevice) quick() (err error) {
 	return err
 }
 
+// Read a single byte from the device
 func (d *i2cDevice) readByte() (val byte, err error) {
 	if d.funcs&I2C_FUNC_SMBUS_READ_BYTE == 0 {
 		return 0, fmt.Errorf("SMBus read byte not supported")
@@ -246,6 +278,7 @@ func (d *i2cDevice) readByte() (val byte, err error) {
 	return data, err
 }
 
+// Read a single byte from a given register of the device
 func (d *i2cDevice) readByteData(reg uint8) (val uint8, err error) {
 	if d.funcs&I2C_FUNC_SMBUS_READ_BYTE_DATA == 0 {
 		return 0, fmt.Errorf("SMBus read byte data not supported")
@@ -256,6 +289,7 @@ func (d *i2cDevice) readByteData(reg uint8) (val uint8, err error) {
 	return data, err
 }
 
+// Write a single byte to the device
 func (d *i2cDevice) writeByte(val byte) (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_WRITE_BYTE == 0 {
 		return fmt.Errorf("SMBus write byte not supported")
@@ -265,6 +299,7 @@ func (d *i2cDevice) writeByte(val byte) (err error) {
 	return err
 }
 
+// Write a single byte to a given register of the device
 func (d *i2cDevice) writeByteData(reg uint8, val uint8) (err error) {
 	if d.funcs&I2C_FUNC_SMBUS_WRITE_BYTE_DATA == 0 {
 		return fmt.Errorf("SMBus write byte data not supported")
