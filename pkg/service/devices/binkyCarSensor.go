@@ -19,7 +19,6 @@ package devices
 
 import (
 	"context"
-	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
@@ -30,7 +29,6 @@ import (
 
 type binkyCarSensor struct {
 	log        zerolog.Logger
-	mutex      sync.Mutex
 	onActive   func()
 	config     model.Device
 	bus        bridge.I2CBus
@@ -88,9 +86,6 @@ func newBinkyCarSensor(log zerolog.Logger, config model.Device, bus bridge.I2CBu
 
 // Configure is called once to put the device in the desired state.
 func (d *binkyCarSensor) Configure(ctx context.Context) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	d.onActive()
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
 		versionMajor, err := dev.ReadByteReg(RegVersionMajor)
@@ -127,15 +122,12 @@ func (d *binkyCarSensor) Configure(ctx context.Context) error {
 
 // Close brings the device back to a safe state.
 func (d *binkyCarSensor) Close(ctx context.Context) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	// Restore all to input
 	d.onActive()
-	for i := range d.outputData {
-		d.outputData[i] = 0
-	}
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		// Restore all to input
+		for i := range d.outputData {
+			d.outputData[i] = 0
+		}
 		// Disable output
 		if err := dev.WriteByteReg(RegOutput, 0); err != nil {
 			return err
@@ -160,9 +152,6 @@ func (d *binkyCarSensor) PinCount() uint {
 // Set the direction of the pin at given index (1...)
 // This is a no-op
 func (d *binkyCarSensor) SetDirection(ctx context.Context, pin model.DeviceIndex, direction PinDirection) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	d.onActive()
 	return nil
 }
@@ -177,9 +166,6 @@ func (d *binkyCarSensor) GetDirection(ctx context.Context, pin model.DeviceIndex
 
 // Set the pin at given index (1...) to the given value
 func (d *binkyCarSensor) Set(ctx context.Context, pin model.DeviceIndex, value bool) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	if pin < 8 {
 		// First 8 bits are input only
 		return errors.Wrapf(InvalidDirectionError, "pin %d has direction input", pin)
@@ -188,21 +174,16 @@ func (d *binkyCarSensor) Set(ctx context.Context, pin model.DeviceIndex, value b
 	if err != nil {
 		return err
 	}
-	outputData := d.outputData[index]
-	if value {
-		outputData |= mask
-	} else {
-		outputData &= ^mask
-	}
-	if d.outputData[index] != outputData {
-		d.log.Debug().
-			Uint8("index", index).
-			Uint8("old", d.outputData[index]).
-			Uint8("new", outputData).
-			Msg("Setting new output value")
-		d.outputData[index] = outputData
-	}
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		outputData := d.outputData[index]
+		if value {
+			outputData |= mask
+		} else {
+			outputData &= ^mask
+		}
+		if d.outputData[index] != outputData {
+			d.outputData[index] = outputData
+		}
 		// Set output
 		if err := dev.WriteByteReg(RegOutput+index, d.outputData[index]); err != nil {
 			return err
@@ -216,9 +197,6 @@ func (d *binkyCarSensor) Set(ctx context.Context, pin model.DeviceIndex, value b
 
 // Get the pin at given index (1...)
 func (d *binkyCarSensor) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	_, mask, err := d.bitMask(pin)
 	if err != nil {
 		return false, err

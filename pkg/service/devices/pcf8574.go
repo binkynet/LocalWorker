@@ -19,7 +19,6 @@ package devices
 
 import (
 	"context"
-	"sync"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/pkg/service/bridge"
@@ -27,7 +26,6 @@ import (
 )
 
 type pcf8574 struct {
-	mutex     sync.Mutex
 	onActive  func()
 	config    model.Device
 	bus       bridge.I2CBus
@@ -57,14 +55,11 @@ func newPCF8574(config model.Device, bus bridge.I2CBus, onActive func()) (GPIO, 
 
 // Configure is called once to put the device in the desired state.
 func (d *pcf8574) Configure(ctx context.Context) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	// Initialize to all INPUT HIGH
 	d.onActive()
-	d.direction = 0xff
-	d.output = 0
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		// Initialize to all INPUT HIGH
+		d.direction = 0xff
+		d.output = 0
 		return dev.WriteByte(0xff)
 	}); err != nil {
 		return err
@@ -74,14 +69,11 @@ func (d *pcf8574) Configure(ctx context.Context) error {
 
 // Close brings the device back to a safe state.
 func (d *pcf8574) Close(ctx context.Context) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	// Set all to INPUT HIGH
 	d.onActive()
-	d.direction = 0xff
-	d.output = 0
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		// Set all to INPUT HIGH
+		d.direction = 0xff
+		d.output = 0
 		return dev.WriteByte(0xff)
 	}); err != nil {
 		return err
@@ -96,9 +88,6 @@ func (d *pcf8574) PinCount() uint {
 
 // Set the direction of the pin at given index (1...)
 func (d *pcf8574) SetDirection(ctx context.Context, index model.DeviceIndex, direction PinDirection) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	// Calculate direction mask
 	mask, err := d.bitMask(index)
 	if err != nil {
@@ -107,15 +96,15 @@ func (d *pcf8574) SetDirection(ctx context.Context, index model.DeviceIndex, dir
 
 	// Update state
 	d.onActive()
-	d.output &= ^mask
-	if direction == PinDirectionInput {
-		d.direction |= mask
-	} else {
-		d.direction &= ^mask
-	}
 
 	// Set initial value
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		d.output &= ^mask
+		if direction == PinDirectionInput {
+			d.direction |= mask
+		} else {
+			d.direction &= ^mask
+		}
 		return dev.WriteByte(d.mergeDirectionAndOutput())
 	}); err != nil {
 		return err
@@ -126,9 +115,6 @@ func (d *pcf8574) SetDirection(ctx context.Context, index model.DeviceIndex, dir
 
 // Get the direction of the pin at given index (1...)
 func (d *pcf8574) GetDirection(ctx context.Context, index model.DeviceIndex) (PinDirection, error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	// Calculate direction mask
 	mask, err := d.bitMask(index)
 	if err != nil {
@@ -144,9 +130,6 @@ func (d *pcf8574) GetDirection(ctx context.Context, index model.DeviceIndex) (Pi
 
 // Set the pin at given index (1...) to the given value
 func (d *pcf8574) Set(ctx context.Context, index model.DeviceIndex, value bool) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	// Calculate direction mask
 	mask, err := d.bitMask(index)
 	if err != nil {
@@ -160,14 +143,14 @@ func (d *pcf8574) Set(ctx context.Context, index model.DeviceIndex, value bool) 
 
 	// Update state
 	d.onActive()
-	if value {
-		d.output |= mask
-	} else {
-		d.output &= ^mask
-	}
 
 	// Set updated value
 	if err := d.bus.Execute(ctx, d.address, func(ctx context.Context, dev bridge.I2CDevice) error {
+		if value {
+			d.output |= mask
+		} else {
+			d.output &= ^mask
+		}
 		return dev.WriteByte(d.mergeDirectionAndOutput())
 	}); err != nil {
 		return err
@@ -178,9 +161,6 @@ func (d *pcf8574) Set(ctx context.Context, index model.DeviceIndex, value bool) 
 
 // Set the pin at given index (1...)
 func (d *pcf8574) Get(ctx context.Context, index model.DeviceIndex) (bool, error) {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
 	// Calculate direction mask
 	mask, err := d.bitMask(index)
 	if err != nil {

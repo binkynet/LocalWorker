@@ -20,9 +20,12 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/ecc1/gpio"
 	aerr "github.com/ewoutp/go-aggregate-error"
 )
 
@@ -52,16 +55,33 @@ type I2CDevice interface {
 }
 
 type i2cBus struct {
-	mutex    sync.Mutex
-	location string
-	devices  map[uint8]*i2cDevice
+	mutex                sync.Mutex
+	location             string
+	devices              map[uint8]*i2cDevice
+	sclPin               int
+	tryRecoverFromLockup bool
 }
 
+const (
+	I2C_RECOVER_NUM_CLOCKS = 10    /* # clock cycles for recovery  */
+	I2C_RECOVER_CLOCK_FREQ = 50000 /* clock frequency for recovery */
+
+	I2C_RECOVER_CLOCK_DELAY_US = (1000000 / (2 * I2C_RECOVER_CLOCK_FREQ))
+)
+
 // NewI2CBus returns accessors the the I2C bus at the given location.
-func NewI2CBus(location string) (I2CBus, error) {
+func NewI2CBus(location string, sclPin int) (I2CBus, error) {
 	b := &i2cBus{
-		location: location,
-		devices:  make(map[uint8]*i2cDevice),
+		location:             location,
+		devices:              make(map[uint8]*i2cDevice),
+		sclPin:               sclPin,
+		tryRecoverFromLockup: false,
+	}
+	if b.tryRecoverFromLockup {
+		if err := b.recoverFromLockup(); err != nil {
+			return nil, fmt.Errorf("failed to recover bus at startup: %w", err)
+		}
+		time.Sleep(time.Second * 2)
 	}
 	return b, nil
 }
@@ -93,6 +113,18 @@ func (b *i2cBus) Execute(ctx context.Context, address uint8, op func(context.Con
 			d.closeFile()
 		}
 		clear(b.devices)
+
+		// Perform recovery (if configured)
+		if b.tryRecoverFromLockup {
+			i2cRecoveryAttemptsTotal.Inc()
+			if err := b.recoverFromLockup(); err != nil {
+				i2cRecoveryFailedTotal.Inc()
+				return fmt.Errorf("i2c recovery failed: %w", err)
+			}
+			i2cRecoverySucceededTotal.Inc()
+		} else {
+			i2cRecoverySkippedTotal.Inc()
+		}
 	}
 	// Return error
 	i2cExecuteErrorCounters.WithLabelValues(strconv.Itoa(int(address))).Inc()
@@ -152,4 +184,38 @@ func (b *i2cBus) Close() error {
 	}
 
 	return ae.AsError()
+}
+
+// Try to recover the i2c bus from lockup.
+func (b *i2cBus) recoverFromLockup() error {
+	fmt.Println("Performing i2c recovery ...")
+	activeLow := true // was false
+	initialValue := true
+	scl, err := gpio.Output(b.sclPin, activeLow, initialValue)
+	if err != nil {
+		return fmt.Errorf("failed to set scl pin to output: %w", err)
+	}
+	for i := 0; i < I2C_RECOVER_NUM_CLOCKS; i++ {
+		time.Sleep(time.Microsecond * I2C_RECOVER_CLOCK_DELAY_US)
+		if err := scl.Write(false); err != nil {
+			return fmt.Errorf("failed to lower scl during i2c recovery: %w", err)
+		}
+		time.Sleep(time.Microsecond * I2C_RECOVER_CLOCK_DELAY_US)
+		if err := scl.Write(true); err != nil {
+			return fmt.Errorf("failed to raise scl during i2c recovery: %w", err)
+		}
+	}
+	// Reset pin to be input
+	if _, err := gpio.Input(b.sclPin, activeLow); err != nil {
+		return fmt.Errorf("failed to reset scl pin to input: %w", err)
+	}
+	// Unexport the pin
+	unexportPath := "/sys/class/gpio/unexport"
+	unexportContent := strconv.Itoa(b.sclPin)
+	if err := os.WriteFile(unexportPath, []byte(unexportContent), 0644); err != nil {
+		return fmt.Errorf("failed to unexport scl pin to input: %w", err)
+	}
+
+	fmt.Println("Performed i2c recovery.")
+	return nil
 }

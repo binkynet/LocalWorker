@@ -32,6 +32,7 @@ type orangepizeroBridge struct {
 const (
 	opzGreenLedPin = 19
 	opzRedLedPin   = 18
+	opzSclPin      = 11
 )
 
 // NewOrangePIZeroBridge implements the bridge for an Orange PI Zero
@@ -92,7 +93,7 @@ func (p *orangepizeroBridge) I2CBus() (I2CBus, error) {
 	defer p.mutex.Unlock()
 
 	if p.bus == nil {
-		bus, err := NewI2CBus("/dev/i2c-0")
+		bus, err := NewI2CBus("/dev/i2c-0", opzSclPin)
 		if err != nil {
 			return nil, errors.Wrap(err, "NewI2CBus failed")
 		}

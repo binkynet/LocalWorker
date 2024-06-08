@@ -33,4 +33,16 @@ var (
 		"i2c_execute_error_total",
 		"Total number of times I2CBus.Execute failed",
 		"address")
+	i2cRecoveryAttemptsTotal = metrics.MustRegisterCounter(subSystem,
+		"i2c_recovery_attempts_total",
+		"Total number of times and I2C bus recovery was attempted")
+	i2cRecoverySucceededTotal = metrics.MustRegisterCounter(subSystem,
+		"i2c_recovery_succeeded_total",
+		"Total number of times and I2C bus recovery succeeded")
+	i2cRecoveryFailedTotal = metrics.MustRegisterCounter(subSystem,
+		"i2c_recovery_failed_total",
+		"Total number of times and I2C bus recovery failed")
+	i2cRecoverySkippedTotal = metrics.MustRegisterCounter(subSystem,
+		"i2c_recovery_skipped_total",
+		"Total number of times and I2C bus recovery skipped")
 )
