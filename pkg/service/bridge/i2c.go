@@ -21,10 +21,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/binkynet/LocalWorker/pkg/service/util"
 	"github.com/ecc1/gpio"
 	aerr "github.com/ewoutp/go-aggregate-error"
 )
@@ -55,9 +56,9 @@ type I2CDevice interface {
 }
 
 type i2cBus struct {
-	mutex                sync.Mutex
 	location             string
 	devices              map[uint8]*i2cDevice
+	queue                chan func()
 	sclPin               int
 	tryRecoverFromLockup bool
 }
@@ -74,9 +75,11 @@ func NewI2CBus(location string, sclPin int) (I2CBus, error) {
 	b := &i2cBus{
 		location:             location,
 		devices:              make(map[uint8]*i2cDevice),
+		queue:                make(chan func()),
 		sclPin:               sclPin,
 		tryRecoverFromLockup: false,
 	}
+	go b.queueProcessor(context.Background())
 	if b.tryRecoverFromLockup {
 		if err := b.recoverFromLockup(); err != nil {
 			return nil, fmt.Errorf("failed to recover bus at startup: %w", err)
@@ -88,9 +91,70 @@ func NewI2CBus(location string, sclPin int) (I2CBus, error) {
 
 // Execute an option on the bus.
 func (b *i2cBus) Execute(ctx context.Context, address uint8, op func(context.Context, I2CDevice) error) error {
+	// Prepare result
+	l := util.SpinLock{}
+	done := false
+	var result error
+
+	// Prepare request
+	req := func() {
+		// Execute actual operation
+		err := b.execute(ctx, address, op)
+
+		// Store result
+		l.Lock()
+		result = err
+		done = true
+		l.Unlock()
+	}
+
+	// Put request in queue
+	select {
+	case b.queue <- req:
+		// Request is on the queue
+	case <-ctx.Done():
+		// Context canceled
+		return ctx.Err()
+	}
+
+	// Wait until result is available
+	for {
+		l.Lock()
+		isDone := done
+		l.Unlock()
+
+		if isDone {
+			return result
+		}
+	}
+}
+
+// Process bus requests from the queue until the given context is canceled.
+func (b *i2cBus) queueProcessor(ctx context.Context) {
+	// Ensure we're always using the same OS thread
+	runtime.LockOSThread()
+
+	// Process the queue
+	for {
+		select {
+		case req, ok := <-b.queue:
+			if ok {
+				// Execute the given request
+				req()
+			} else {
+				// Queue closed
+				return
+			}
+		case <-ctx.Done():
+			// Context canceled
+			return
+		}
+	}
+}
+
+// Execute an option on the bus.
+func (b *i2cBus) execute(ctx context.Context, address uint8, op func(context.Context, I2CDevice) error) error {
 	i2cExecuteCounters.WithLabelValues(strconv.Itoa(int(address))).Inc()
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
 
 	var err error
 	for attempt := 0; attempt < 2; attempt++ {
@@ -167,23 +231,41 @@ func (b *i2cBus) DetectSlaveAddresses() []byte {
 // Close the bus and all devices on it
 func (b *i2cBus) Close() error {
 	// Collect all existing devices
-	b.mutex.Lock()
-	devices := make([]*i2cDevice, 0, len(b.devices))
-	for _, d := range b.devices {
-		devices = append(devices, d)
-	}
-	b.mutex.Unlock()
-
-	// Close all collected devices
+	done := false
+	l := util.SpinLock{}
 	var ae aerr.AggregateError
-	for _, d := range devices {
-		if err := d.closeFile(); err != nil {
-			ae.Add(err)
+	b.queue <- func() {
+		// Set done on exit
+		defer func() {
+			l.Lock()
+			done = true
+			l.Unlock()
+		}()
+
+		// Capture all devices
+		devices := make([]*i2cDevice, 0, len(b.devices))
+		for _, d := range b.devices {
+			devices = append(devices, d)
 		}
-		delete(b.devices, d.address)
+
+		// Close all collected devices
+		for _, d := range devices {
+			if err := d.closeFile(); err != nil {
+				ae.Add(err)
+			}
+			delete(b.devices, d.address)
+		}
 	}
 
-	return ae.AsError()
+	// Wait until ready
+	for {
+		l.Lock()
+		isDone := done
+		l.Unlock()
+		if isDone {
+			return ae.AsError()
+		}
+	}
 }
 
 // Try to recover the i2c bus from lockup.
