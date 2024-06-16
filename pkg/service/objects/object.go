@@ -53,7 +53,13 @@ type RequestService interface {
 
 // StatusService is used by object types to report their status to the network master.
 type StatusService interface {
-	PublishOutputActual(api.Output)
-	PublishSensorActual(api.Sensor)
-	PublishSwitchActual(api.Switch)
+	// Try to publish the actual output status.
+	// Returns true when the output has been put in publish queue, false otherwise.
+	PublishOutputActual(api.Output) bool
+	// Try to publish the actual sensor status.
+	// Returns true when the sensor has been put in publish queue, false otherwise.
+	PublishSensorActual(api.Sensor) bool
+	// Try to publish the actual switch status.
+	// Returns true when the switch has been put in publish queue, false otherwise.
+	PublishSwitchActual(api.Switch) bool
 }

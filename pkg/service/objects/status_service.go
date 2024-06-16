@@ -117,41 +117,53 @@ func (s *statusService) Run(ctx context.Context, nwControlClient api.NetworkCont
 	return g.Wait()
 }
 
-func (s *statusService) PublishOutputActual(msg api.Output) {
+// Try to publish the actual output status.
+// Returns true when the output has been put in publish queue, false otherwise.
+func (s *statusService) PublishOutputActual(msg api.Output) bool {
 	select {
 	case s.outputActuals <- msg:
 		// Done
+		return true
 	case <-time.After(time.Second * 10):
 		// Timeout
 		s.log.Warn().
 			Str("address", string(msg.GetAddress())).
 			Int32("value", int32(msg.GetActual().GetValue())).
 			Msg("Timeout in publishing output actual")
+		return false
 	}
 }
 
-func (s *statusService) PublishSensorActual(msg api.Sensor) {
+// Try to publish the actual sensor status.
+// Returns true when the sensor has been put in publish queue, false otherwise.
+func (s *statusService) PublishSensorActual(msg api.Sensor) bool {
 	select {
 	case s.sensorActuals <- msg:
 		// Done
+		return true
 	case <-time.After(time.Second * 10):
 		// Timeout
 		s.log.Warn().
 			Str("address", string(msg.GetAddress())).
 			Int32("value", msg.GetActual().GetValue()).
 			Msg("Timeout in publishing sensor actual")
+		return false
 	}
 }
 
-func (s *statusService) PublishSwitchActual(msg api.Switch) {
+// Try to publish the actual switch status.
+// Returns true when the switch has been put in publish queue, false otherwise.
+func (s *statusService) PublishSwitchActual(msg api.Switch) bool {
 	select {
 	case s.switchActuals <- msg:
 		// Done
+		return true
 	case <-time.After(time.Second * 10):
 		// Timeout
 		s.log.Warn().
 			Str("address", string(msg.GetAddress())).
 			Int32("value", int32(msg.GetActual().GetDirection())).
 			Msg("Timeout in publishing switching actual")
+		return false
 	}
 }

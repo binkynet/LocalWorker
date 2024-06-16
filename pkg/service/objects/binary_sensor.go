@@ -151,18 +151,24 @@ func (o *binarySensor) Run(ctx context.Context, requests RequestService, statuse
 				Bool("value", value).
 				Bool("last_value", lastValue).
 				Logger()
-			if force || lastValue != value || changes == 0 {
+			if force || valueChanged || changes == 0 {
 				log.Debug().Bool("force", force).Msg("change detected")
 			}
-			lastValue = value
-			actual.Actual.Value = boolToInt32(value)
-			statuses.PublishSensorActual(actual)
+			// Update metrics
 			binarySensorActualGauge.WithLabelValues(id).Set(float64(boolToInt32(value)))
 			if valueChanged {
 				binarySensorChangesTotal.WithLabelValues(id).Inc()
 			}
-			changes++
-			lastSent = time.Now()
+			actual.Actual.Value = boolToInt32(value)
+			if statuses.PublishSensorActual(actual) {
+				lastValue = value
+				changes++
+				lastSent = time.Now()
+			} else {
+				// Failed to enqueue actual sent.
+				// Force next update
+				atomic.StoreInt32(&o.sendNow, 1)
+			}
 		}
 
 		// Wait a bit
