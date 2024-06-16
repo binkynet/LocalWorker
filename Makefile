@@ -13,6 +13,13 @@ BINARIES := ./bin/linux/arm/$(BINNAME) ./bin/linux/amd64/$(BINNAME) ./bin/darwin
 
 .PHONY: all clean bootstrap binaries test
 
+ALLARCHS := arm arm64
+
+ALLARCHBINDIRS := $(addprefix ./bin/,$(ALLARCHS))
+ALLINITRDS := $(addsuffix /uInitrd,$(ALLARCHBINDIRS))
+ALLBOOTSCRIPTS := $(addsuffix /boot.scr.uimg,$(ALLARCHBINDIRS))
+ALLDEPLOYMENTS := $(ALLINITRDS) $(ALLBOOTSCRIPTS)
+
 all: binaries deployment
 
 clean:
@@ -25,7 +32,7 @@ bootstrap:
 
 binaries: 
 	CGO_ENABLED=0 gox \
-		-osarch="linux/amd64 linux/arm darwin/amd64 darwin/arm64" \
+		-osarch="linux/amd64 linux/arm linux/arm64 darwin/amd64 darwin/arm64" \
 		-ldflags="-X main.projectVersion=$(VERSION) -X main.projectBuild=$(COMMIT)" \
 		-output="bin/{{.OS}}/{{.Arch}}/$(BINNAME)" \
 		-tags="netgo" \
@@ -34,42 +41,45 @@ binaries:
 test:
 	go test ./...
 
-deployment: ./bin/uInitrd ./bin/boot.scr.uimg
+deployment: $(ALLDEPLOYMENTS)
 
-./bin/linux/arm/uroot.cpio: ./bin/linux/arm/$(BINNAME)
+./bin/linux/%/uroot.cpio: ./bin/linux/%/$(BINNAME)
+	@mkdir -p bin/linux/$*
 	docker run -t --rm \
-		-e GOARCH=arm \
+		-e GOARCH=$* \
 		-v $(ROOTDIR):/project \
 		-w /go/u-root \
 		u-root-builder \
 		u-root \
-		-format=cpio -build=bb -o /project/bin/linux/arm/uroot.cpio \
-		-files=/project/bin/linux/arm/$(BINNAME):bin/bnLocalWorker \
+		-format=cpio -build=bb -o /project/bin/linux/$*/uroot.cpio \
+		-files=/project/bin/linux/$*/$(BINNAME):bin/bnLocalWorker \
 		-uinitcmd=/bin/bnLocalWorker \
 		-defaultsh="" \
 		./cmds/core/init
 
-./bin/uInitrd: ./bin/linux/arm/uroot.cpio
+./bin/%/uInitrd: ./bin/linux/%/uroot.cpio
+	@mkdir -p bin/$*
 	docker run -t --rm \
 		-v $(ROOTDIR):/project \
 		mkimage-builder \
 		mkimage \
-			-A arm \
+			-A $* \
 			-O linux \
 			-T ramdisk \
-			-d /project/bin/linux/arm/uroot.cpio \
-			/project/bin/uInitrd
+			-d /project/bin/linux/$*/uroot.cpio \
+			/project/bin/$*/uInitrd
 
-./bin/boot.scr.uimg: ./boot/boot.cmd
+./bin/%/boot.scr.uimg: ./boot/boot.cmd
+	@mkdir -p bin/$*
 	docker run -t --rm \
 		-v $(ROOTDIR):/project \
 		mkimage-builder \
 		mkimage \
 			-C none \
-			-A arm \
+			-A $* \
 			-T script \
 			-d /project/boot/boot.cmd \
-			/project/bin/boot.scr.uimg
+			/project/bin/$*/boot.scr.uimg
 
 .PHONY: update-modules
 update-modules:
@@ -82,8 +92,8 @@ update-modules:
 	go mod tidy
 
 deploy:
-	scp bin/uInitrd pi@192.168.77.1:/home/pi/tftp/
-	scp bin/boot.scr.uimg pi@192.168.77.1:/home/pi/tftp/
+	scp bin/arm/uInitrd pi@192.168.77.1:/home/pi/tftp/
+	scp bin/arm/boot.scr.uimg pi@192.168.77.1:/home/pi/tftp/
 
 deploy-local:
 	scp bin/linux/arm/bnLocalWorker pi@192.168.140.104:/home/pi/
