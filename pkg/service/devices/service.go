@@ -100,7 +100,7 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 		case model.DeviceTypePCF8574:
 			dev, err = newPCF8574(*c, bus, s.onActive)
 		case model.DeviceTypeMQTT:
-			dev, err = newMQTT(*c, s.onActive, moduleID, s.mqttBrokerAddress)
+			dev, err = newMQTT(log, *c, s.onActive, moduleID, s.mqttBrokerAddress)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}

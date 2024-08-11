@@ -93,7 +93,7 @@ func newTrackInverter(sender string, oid model.ObjectID, address model.ObjectAdd
 
 // Return the type of this object.
 func (o *trackInverter) Type() ObjectType {
-	return trackInverterTypeInstance
+	return outputTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -205,6 +205,13 @@ func (o *trackInverter) ProcessMessage(ctx context.Context, r model.Output) erro
 	o.targetState = model.TrackInverterState(value)
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
 	return nil
+}
+
+// Update metrics
+func (o *trackInverter) UpdateMetrics(msg model.Output) {
+	id := string(msg.Address)
+	trackInverterRequestsTotal.WithLabelValues(id).Inc()
+	trackInverterRequestGauge.WithLabelValues(id).Set(float64(msg.GetRequest().GetValue()))
 }
 
 // ProcessPowerMessage acts upons a given power message.

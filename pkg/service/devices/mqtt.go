@@ -25,11 +25,13 @@ import (
 	"time"
 
 	mqttapi "github.com/eclipse/paho.mqtt.golang"
+	"github.com/rs/zerolog"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 )
 
 type mqtt struct {
+	log               zerolog.Logger
 	mutex             sync.Mutex
 	onActive          func()
 	config            model.Device
@@ -43,16 +45,18 @@ type mqtt struct {
 }
 
 const (
-	mqttPinCount = 256
+	mqttPinCount       = 256
+	mqttPublishTimeout = time.Millisecond * 200
 )
 
 // newMQTT creates a virtual MQTT device with given config.
-func newMQTT(config model.Device, onActive func(), moduleID, mqttBrokerAddress string) (GPIO, error) {
+func newMQTT(log zerolog.Logger, config model.Device, onActive func(), moduleID, mqttBrokerAddress string) (GPIO, error) {
 	if config.Type != model.DeviceTypeMQTT {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
 	topicPrefix := strings.TrimSuffix(config.Address, "/") + "/"
 	return &mqtt{
+		log:               log,
 		onActive:          onActive,
 		config:            config,
 		topicPrefix:       topicPrefix,
@@ -68,10 +72,18 @@ func (d *mqtt) Configure(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	opts := mqttapi.NewClientOptions().AddBroker("tcp://" + d.mqttBrokerAddress).SetClientID(d.mqttClientID)
+	// Prepare MQTT client options
+	opts := mqttapi.NewClientOptions().
+		AddBroker("tcp://" + d.mqttBrokerAddress).
+		SetClientID(d.mqttClientID)
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
+	opts.SetOrderMatters(false)
+	opts.SetDefaultPublishHandler(func(c mqttapi.Client, m mqttapi.Message) {
+		// Ignore messages when no subscription match
+	})
 
+	// Connect client
 	d.client = mqttapi.NewClient(opts)
 	if token := d.client.Connect(); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to connect to mqtt: %w", token.Error())
@@ -150,7 +162,13 @@ func (d *mqtt) Set(ctx context.Context, pin model.DeviceIndex, value bool) error
 
 	topic := fmt.Sprintf("%spin%d/command", d.topicPrefix, pin)
 	payload := formatBool(value)
-	d.client.Publish(topic, 0, false, payload)
+	token := d.client.Publish(topic, 0, false, payload)
+	if !token.WaitTimeout(mqttPublishTimeout) {
+		d.log.Error().Err(token.Error()).
+			Str("topic", topic).
+			Str("payload", payload).
+			Msg("failed to deliver MQTT command in time")
+	}
 
 	return nil
 }
@@ -180,7 +198,7 @@ func parseBool(str string) (bool, error) {
 // format a bool as string
 func formatBool(v bool) string {
 	if v {
-		return "on"
+		return "ON"
 	}
-	return "off"
+	return "OFF"
 }
