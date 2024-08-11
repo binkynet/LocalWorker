@@ -57,6 +57,7 @@ type service struct {
 	hardwareID        string
 	moduleID          string
 	programVersion    string
+	mqttBrokerAddress string
 	log               zerolog.Logger
 	devices           map[model.DeviceID]Device
 	configuredDevices map[model.DeviceID]Device
@@ -68,11 +69,14 @@ type service struct {
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
-func NewService(hardwareID, moduleID, programVersion string, configs []*model.Device, bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
+func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
+	configs []*model.Device,
+	bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		hardwareID:        hardwareID,
 		moduleID:          moduleID,
 		programVersion:    programVersion,
+		mqttBrokerAddress: mqttBrokerAddress,
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
@@ -95,6 +99,8 @@ func NewService(hardwareID, moduleID, programVersion string, configs []*model.De
 			dev, err = newPCA9685(*c, bus, s.onActive)
 		case model.DeviceTypePCF8574:
 			dev, err = newPCF8574(*c, bus, s.onActive)
+		case model.DeviceTypeMQTT:
+			dev, err = newMQTT(*c, s.onActive, moduleID, s.mqttBrokerAddress)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}

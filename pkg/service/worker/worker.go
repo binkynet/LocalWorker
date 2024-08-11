@@ -25,12 +25,13 @@ type Service interface {
 
 type Config struct {
 	model.LocalWorkerConfig
-	ProgramVersion string
-	ModuleID       string
-	HardwareID     string
-	MetricsPort    int
-	GRPCPort       int
-	SSHPort        int
+	ProgramVersion    string
+	ModuleID          string
+	HardwareID        string
+	MetricsPort       int
+	GRPCPort          int
+	SSHPort           int
+	MQTTBrokerAddress string
 }
 
 type Dependencies struct {
@@ -66,7 +67,7 @@ func (s *service) Run(ctx context.Context) error {
 	}
 	// Build devices service
 	log.Debug().Msg("build devices service")
-	devService, err := devices.NewService(s.config.HardwareID, s.config.ModuleID, s.config.ProgramVersion, s.config.GetDevices(), s.Bridge, bus, s.Log)
+	devService, err := devices.NewService(s.config.HardwareID, s.config.ModuleID, s.config.ProgramVersion, s.config.MQTTBrokerAddress, s.config.GetDevices(), s.Bridge, bus, s.Log)
 	if err != nil {
 		log.Debug().Err(err).Msg("devices.NewService failed")
 		return fmt.Errorf("devices.NewService failed: %w", err)
