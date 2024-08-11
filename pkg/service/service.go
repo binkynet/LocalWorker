@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -139,6 +140,7 @@ func (s *service) Run(ctx context.Context) {
 
 		// Dialog connection to nwControl
 		log.Debug().Msg("Dialing NetworkControl service...")
+		mqttBrokerAddress := net.JoinHostPort(nwControlInfo.ApiAddress, "1883")
 		nwControlConn, err := grpcutil.DialConn(nwControlInfo)
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to dial NetworkControl service")
@@ -148,7 +150,7 @@ func (s *service) Run(ctx context.Context) {
 
 		// Run NCS with given nwControlConn in local func,
 		// so we can close the connection on exit.
-		func(ncControlConn *grpc.ClientConn) {
+		func(ncControlConn *grpc.ClientConn, mqttBrokerAddress string) {
 			// Ensure we close the connection on exit
 			defer nwControlConn.Close()
 			nwControlClient := api.NewNetworkControlServiceClient(nwControlConn)
@@ -159,7 +161,7 @@ func (s *service) Run(ctx context.Context) {
 			s.ncsCancel = ncsCancel
 			s.mutex.Unlock()
 			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
-				s.MetricsPort, s.GRPCPort, s.SSHPort,
+				s.MetricsPort, s.GRPCPort, s.SSHPort, mqttBrokerAddress,
 				s.timeOffsetChanges, s.Bridge, nwControlClient)
 			s.mutex.Lock()
 			s.getRequestService = ncs
@@ -183,7 +185,7 @@ func (s *service) Run(ctx context.Context) {
 				log.Warn().Msg("Exiting process")
 				os.Exit(1)
 			}
-		}(nwControlConn)
+		}(nwControlConn, mqttBrokerAddress)
 
 		// If context cancelled, return
 		if ctx.Err() != nil {

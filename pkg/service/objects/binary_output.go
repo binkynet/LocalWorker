@@ -19,6 +19,8 @@ package objects
 
 import (
 	"context"
+	"sync/atomic"
+	"time"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/LocalWorker/pkg/service/devices"
@@ -26,13 +28,16 @@ import (
 )
 
 type binaryOutput struct {
-	log          zerolog.Logger
-	config       model.Object
-	address      model.ObjectAddress
-	sender       string
-	outputDevice devices.GPIO
-	pin          model.DeviceIndex
-	invert       bool
+	log              zerolog.Logger
+	config           model.Object
+	address          model.ObjectAddress
+	sender           string
+	outputDevice     devices.GPIO
+	pin              model.DeviceIndex
+	invert           bool
+	targetState      int32
+	currentState     int32
+	sendActualNeeded int32
 }
 
 // newBinaryOutput creates a new binary-output object for the given configuration.
@@ -73,7 +78,7 @@ func newBinaryOutput(sender string, oid model.ObjectID, address model.ObjectAddr
 
 // Return the type of this object.
 func (o *binaryOutput) Type() ObjectType {
-	return binaryOutputTypeInstance
+	return outputTypeInstance
 }
 
 // Configure is called once to put the object in the desired state.
@@ -88,21 +93,65 @@ func (o *binaryOutput) Configure(ctx context.Context) error {
 
 // Run the object until the given context is cancelled.
 func (o *binaryOutput) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
-	// Nothing to do here
-	<-ctx.Done()
-	return nil
+	defer o.log.Debug().Msg("binaryOutput.Run terminated")
+	initialized := false
+	for {
+		delay := time.Millisecond * 5
+		if !initialized || o.targetState != o.currentState {
+			delay = time.Millisecond
+
+			// Now set the desired value
+			if err := o.outputDevice.Set(ctx, o.pin, o.pinValue(int32ToBool(o.targetState))); err != nil {
+				o.log.Warn().Err(err).Msg("GPIO.set failed")
+			}
+
+			o.currentState = o.targetState
+			initialized = true
+		}
+		// Send actual message (if needed)
+		sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
+		if sendNeeded {
+			msg := model.Output{
+				Address: o.address,
+				Request: &model.OutputState{
+					Value: o.currentState,
+				},
+				Actual: &model.OutputState{
+					Value: o.currentState,
+				},
+			}
+			statuses.PublishOutputActual(msg)
+			// o.log.Debug().Msg("Sent output actual")
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(delay):
+			// Continue
+		}
+	}
 }
 
 // ProcessMessage acts upons a given request.
 func (o *binaryOutput) ProcessMessage(ctx context.Context, r model.Output) error {
-	value := r.GetRequest().GetValue()
+	o.targetState = r.GetRequest().GetValue()
+	atomic.StoreInt32(&o.sendActualNeeded, 1)
+
+	/*value := r.GetRequest().GetValue()
 	log := o.log.With().Int32("value", value).Logger()
 	log.Debug().Msg("got request")
 	if err := o.outputDevice.Set(ctx, o.pin, o.pinValue(int32ToBool(value))); err != nil {
 		log.Debug().Err(err).Msg("GPIO.set failed")
 		return err
-	}
+	}*/
 	return nil
+}
+
+// Update metrics
+func (o *binaryOutput) UpdateMetrics(msg model.Output) {
+	id := string(msg.Address)
+	binaryOutputRequestsTotal.WithLabelValues(id).Inc()
+	binaryOutputRequestGauge.WithLabelValues(id).Set(float64(msg.GetRequest().GetValue()))
 }
 
 // ProcessPowerMessage acts upons a given power message.

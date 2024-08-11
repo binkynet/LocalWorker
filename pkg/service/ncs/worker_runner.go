@@ -132,6 +132,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 			MetricsPort:       ncs.metricsPort,
 			GRPCPort:          ncs.grpcPort,
 			SSHPort:           ncs.sshPort,
+			MQTTBrokerAddress: ncs.mqttBrokerAddress,
 		}, worker.Dependencies{
 			Log:             log,
 			Bridge:          ncs.bridge,

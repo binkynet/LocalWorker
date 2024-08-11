@@ -1,4 +1,4 @@
-// Copyright 2021 Ewout Prangsma
+// Copyright 2020 Ewout Prangsma
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,41 +25,42 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type trackInverterType string
+type outputType string
 
-const trackInverterTypeInstance trackInverterType = "trackInverterType"
+const outputTypeInstance outputType = "outputType"
 
-func (t trackInverterType) String() string {
+func (t outputType) String() string {
 	return string(t)
 }
 
-func (trackInverterType) Run(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
+func (outputType) Run(ctx context.Context, log zerolog.Logger, requests RequestService, statuses StatusService, service Service, moduleID string) error {
 	cancel := requests.RegisterOutputRequestReceiver(func(msg model.Output) error {
-		// log := log.With().
-		// 	Str("address", string(msg.Address)).
-		// 	Int32("value", msg.GetRequest().GetValue()).
-		// 	Logger()
-		// log.Debug().Msg("got inverter output message")
+		log := log.With().Str("address", string(msg.Address)).Logger()
+		//log.Debug().Msg("got message")
 		if obj, isGlobal, found := service.ObjectByAddress(msg.Address); found {
-			if x, ok := obj.(*trackInverter); ok {
+			if x, ok := obj.(outputAPI); ok {
 				// Process message
 				if err := x.ProcessMessage(ctx, msg); err != nil {
-					log.Error().Err(err).Msg("ProcessMessage failed")
 					return err
 				}
 				// Set metrics
-				id := string(msg.Address)
-				trackInverterRequestsTotal.WithLabelValues(id).Inc()
-				trackInverterRequestGauge.WithLabelValues(id).Set(float64(msg.GetRequest().GetValue()))
+				x.UpdateMetrics(msg)
 			} else {
-				return errors.Errorf("Expected object of type trackInverter")
+				return errors.Errorf("Expected object of type outputAPI")
 			}
 		} else if !isGlobal {
-			log.Debug().Msg("track-inverter object not found")
+			log.Debug().Msg("output object not found")
 		}
 		return nil
 	})
 	defer cancel()
 	<-ctx.Done()
 	return nil
+}
+
+type outputAPI interface {
+	// ProcessMessage acts upons a given request.
+	ProcessMessage(ctx context.Context, r model.Output) error
+	// Update metrics
+	UpdateMetrics(model.Output)
 }
