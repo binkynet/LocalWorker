@@ -30,7 +30,7 @@ import (
 	model "github.com/binkynet/BinkyNet/apis/v1"
 )
 
-type mqtt struct {
+type mqttGPIO struct {
 	log               zerolog.Logger
 	mutex             sync.Mutex
 	onActive          func()
@@ -49,13 +49,13 @@ const (
 	mqttPublishTimeout = time.Millisecond * 200
 )
 
-// newMQTT creates a virtual MQTT device with given config.
-func newMQTT(log zerolog.Logger, config model.Device, onActive func(), moduleID, mqttBrokerAddress string) (GPIO, error) {
-	if config.Type != model.DeviceTypeMQTT {
+// newMQTTGPIO creates a virtual MQTT gpio device with given config.
+func newMQTTGPIO(log zerolog.Logger, config model.Device, onActive func(), moduleID, mqttBrokerAddress string) (GPIO, error) {
+	if config.Type != model.DeviceTypeMQTTGPIO {
 		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
 	}
 	topicPrefix := strings.TrimSuffix(config.Address, "/") + "/"
-	return &mqtt{
+	return &mqttGPIO{
 		log:               log,
 		onActive:          onActive,
 		config:            config,
@@ -68,7 +68,7 @@ func newMQTT(log zerolog.Logger, config model.Device, onActive func(), moduleID,
 }
 
 // Configure is called once to put the device in the desired state.
-func (d *mqtt) Configure(ctx context.Context) error {
+func (d *mqttGPIO) Configure(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -97,7 +97,7 @@ func (d *mqtt) Configure(ctx context.Context) error {
 }
 
 // Close brings the device back to a safe state.
-func (d *mqtt) Close(ctx context.Context) error {
+func (d *mqttGPIO) Close(ctx context.Context) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -112,7 +112,7 @@ func (d *mqtt) Close(ctx context.Context) error {
 }
 
 // Receive messages
-func (d *mqtt) onMessage(client mqttapi.Client, msg mqttapi.Message) {
+func (d *mqttGPIO) onMessage(client mqttapi.Client, msg mqttapi.Message) {
 	topic := strings.TrimPrefix(msg.Topic(), d.topicPrefix)
 	if strings.HasSuffix(topic, "/state") {
 		// Valid state message
@@ -129,12 +129,12 @@ func (d *mqtt) onMessage(client mqttapi.Client, msg mqttapi.Message) {
 }
 
 // PinCount returns the number of pins of the device
-func (d *mqtt) PinCount() uint {
+func (d *mqttGPIO) PinCount() uint {
 	return mqttPinCount
 }
 
 // Set the direction of the pin at given index (1...)
-func (d *mqtt) SetDirection(ctx context.Context, index model.DeviceIndex, direction PinDirection) error {
+func (d *mqttGPIO) SetDirection(ctx context.Context, index model.DeviceIndex, direction PinDirection) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -143,7 +143,7 @@ func (d *mqtt) SetDirection(ctx context.Context, index model.DeviceIndex, direct
 }
 
 // Get the direction of the pin at given index (1...)
-func (d *mqtt) GetDirection(ctx context.Context, index model.DeviceIndex) (PinDirection, error) {
+func (d *mqttGPIO) GetDirection(ctx context.Context, index model.DeviceIndex) (PinDirection, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -151,7 +151,7 @@ func (d *mqtt) GetDirection(ctx context.Context, index model.DeviceIndex) (PinDi
 }
 
 // Set the pin at given index (1...) to the given value
-func (d *mqtt) Set(ctx context.Context, pin model.DeviceIndex, value bool) error {
+func (d *mqttGPIO) Set(ctx context.Context, pin model.DeviceIndex, value bool) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -174,7 +174,7 @@ func (d *mqtt) Set(ctx context.Context, pin model.DeviceIndex, value bool) error
 }
 
 // Set the pin at given index (1...)
-func (d *mqtt) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
+func (d *mqttGPIO) Get(ctx context.Context, pin model.DeviceIndex) (bool, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
