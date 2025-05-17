@@ -101,6 +101,8 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 			dev, err = newPCF8574(*c, bus, s.onActive)
 		case model.DeviceTypeMQTTGPIO:
 			dev, err = newMQTTGPIO(log, *c, s.onActive, moduleID, s.mqttBrokerAddress)
+		case model.DeviceTypeMQTTServo:
+			dev, err = newMQTTServo(log, *c, s.onActive, moduleID, s.mqttBrokerAddress)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}
