@@ -45,6 +45,7 @@ type Config struct {
 	MetricsPort    int
 	GRPCPort       int
 	SSHPort        int
+	HostID         string // Only used if not empty
 }
 
 type Dependencies struct {
@@ -75,9 +76,13 @@ type service struct {
 func NewService(conf Config, deps Dependencies) (Service, error) {
 	deps.Logger = deps.Logger.With().Str("component", "service").Logger()
 	// Create host ID
-	hostID, err := createHostID()
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to create host ID")
+	hostID := conf.HostID
+	if hostID == "" {
+		var err error
+		hostID, err = createHostID()
+		if err != nil {
+			return nil, errors.Wrap(err, "Failed to create host ID")
+		}
 	}
 	deps.Logger = deps.Logger.With().Str("module-id", hostID).Logger()
 	s := &service{
