@@ -43,7 +43,7 @@ type NetworkControlService interface {
 // client.
 func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
 	metricsPort, grpcPort, sshPort int, mqttBrokerAddress string,
-	timeOffsetChanges chan int64, bridge bridge.API,
+	timeOffsetChanges chan int64, bridge bridge.API, isVirtual bool,
 	nwControlClient api.NetworkControlServiceClient) NetworkControlService {
 	// Prepare logger
 	ncsID := atomic.AddUint32(&lastNcsID, 1)
@@ -63,6 +63,7 @@ func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
 			Logger(),
 		timeOffsetChanges: timeOffsetChanges,
 		bridge:            bridge,
+		isVirtual:         isVirtual,
 		nwControlClient:   nwControlClient,
 	}
 	return ncs
@@ -77,6 +78,7 @@ type networkControlService struct {
 	mqttBrokerAddress string
 	hostID            string
 	ncsID             uint32
+	isVirtual         bool
 	log               zerolog.Logger
 	timeOffsetChanges chan int64
 	bridge            bridge.API

@@ -34,14 +34,15 @@ type mqttGPIO struct {
 	log               zerolog.Logger
 	mutex             sync.Mutex
 	onActive          func()
-	config            model.Device
 	topicPrefix       string
 	mqttClientID      string
 	mqttBrokerAddress string
 
-	states    map[string]string
-	direction []PinDirection
-	client    mqttapi.Client
+	states        map[string]string
+	direction     []PinDirection
+	client        mqttapi.Client
+	stateTopics   map[model.DeviceIndex]string
+	commandTopics map[model.DeviceIndex]string
 }
 
 const (
@@ -50,21 +51,24 @@ const (
 )
 
 // newMQTTGPIO creates a virtual MQTT gpio device with given config.
-func newMQTTGPIO(log zerolog.Logger, config model.Device, onActive func(), moduleID, mqttBrokerAddress string) (GPIO, error) {
-	if config.Type != model.DeviceTypeMQTTGPIO {
-		return nil, model.InvalidArgument("Invalid device type '%s'", string(config.Type))
-	}
-	topicPrefix := strings.TrimSuffix(config.Address, "/") + "/"
-	return &mqttGPIO{
+func newMQTTGPIO(log zerolog.Logger, id model.DeviceID, onActive func(), moduleID, topicPrefix, mqttBrokerAddress string) (GPIO, error) {
+	//	topicPrefix := strings.TrimSuffix(config.Address, "/") + "/"
+	gpio := &mqttGPIO{
 		log:               log,
 		onActive:          onActive,
-		config:            config,
 		topicPrefix:       topicPrefix,
-		mqttClientID:      fmt.Sprintf("%s-%s", moduleID, config.Id),
+		mqttClientID:      fmt.Sprintf("%s-%s", moduleID, id),
 		mqttBrokerAddress: mqttBrokerAddress,
 		states:            make(map[string]string),
 		direction:         make([]PinDirection, mqttPinCount),
-	}, nil
+		stateTopics:       make(map[model.DeviceIndex]string),
+		commandTopics:     make(map[model.DeviceIndex]string),
+	}
+	for pin := model.DeviceIndex(1); uint(pin) <= gpio.PinCount(); pin++ {
+		gpio.stateTopics[pin] = fmt.Sprintf("%spin%d/state", topicPrefix, pin)
+		gpio.commandTopics[pin] = fmt.Sprintf("%spin%d/command", topicPrefix, pin)
+	}
+	return gpio, nil
 }
 
 // Configure is called once to put the device in the desired state.
@@ -73,14 +77,18 @@ func (d *mqttGPIO) Configure(ctx context.Context) error {
 	defer d.mutex.Unlock()
 
 	// Prepare MQTT client options
-	opts := mqttapi.NewClientOptions().
-		AddBroker("tcp://" + d.mqttBrokerAddress).
-		SetClientID(d.mqttClientID)
-	opts.SetKeepAlive(2 * time.Second)
-	opts.SetPingTimeout(1 * time.Second)
-	opts.SetOrderMatters(false)
-	opts.SetDefaultPublishHandler(func(c mqttapi.Client, m mqttapi.Message) {
-		// Ignore messages when no subscription match
+	opts := defaultMQTTClientOptions(d.mqttBrokerAddress, d.mqttClientID)
+	opts.SetOnConnectHandler(func(c mqttapi.Client) {
+		d.log.Debug().Msg("Connected to MQTT")
+		topic := d.topicPrefix + "#"
+		if token := d.client.Subscribe(topic, 0, d.onMessage); token.Wait() && token.Error() != nil {
+			d.log.Error().Err(token.Error()).
+				Msgf("failed to subscribe to '%s'", topic)
+			c.Disconnect(500)
+		} else {
+			d.log.Debug().Msgf("Subscribed to MQTT topic '%s'", topic)
+			d.onActive()
+		}
 	})
 
 	// Connect client
@@ -88,11 +96,7 @@ func (d *mqttGPIO) Configure(ctx context.Context) error {
 	if token := d.client.Connect(); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to connect to mqtt: %w", token.Error())
 	}
-	if token := d.client.Subscribe(d.topicPrefix+"#", 0, d.onMessage); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("failed to subscribe to '%s': %w", d.topicPrefix+"#", token.Error())
-	}
 
-	d.onActive()
 	return nil
 }
 
@@ -160,9 +164,10 @@ func (d *mqttGPIO) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 		return nil
 	}
 
-	topic := fmt.Sprintf("%spin%d/command", d.topicPrefix, pin)
+	topic := d.commandTopics[pin]
 	payload := formatBool(value)
-	token := d.client.Publish(topic, 0, false, payload)
+	retain := true
+	token := d.client.Publish(topic, 0, retain, payload)
 	if !token.WaitTimeout(mqttPublishTimeout) {
 		d.log.Error().Err(token.Error()).
 			Str("topic", topic).
@@ -178,9 +183,55 @@ func (d *mqttGPIO) Get(ctx context.Context, pin model.DeviceIndex) (bool, error)
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	state := d.states[fmt.Sprintf("pin%d", pin)]
+	topic := d.stateTopics[pin]
+	stateKey := strings.TrimSuffix(strings.TrimPrefix(topic, d.topicPrefix), "/state")
+	state := d.states[stateKey]
 	result, _ := parseBool(state)
 	return result, nil
+}
+
+// Sets the state topic to use for the pin of the device with given index
+// Empty topics are ignored.
+func (d *mqttGPIO) SetStateTopic(index model.DeviceIndex, topic string) error {
+	if topic == "" {
+		return nil
+	}
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if index < 1 || uint(index) > d.PinCount() {
+		return fmt.Errorf("invalid index %d", index)
+	}
+	if !strings.HasPrefix(topic, d.topicPrefix) {
+		return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
+	}
+	if !strings.HasSuffix(topic, "/state") {
+		return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
+	}
+	d.stateTopics[index] = topic
+	return nil
+}
+
+// Sets the command topic to use for the pin of the device with given index.
+// Empty topics are ignored.
+func (d *mqttGPIO) SetCommandTopic(index model.DeviceIndex, topic string) error {
+	if topic == "" {
+		return nil
+	}
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	if index < 1 || uint(index) > d.PinCount() {
+		return fmt.Errorf("invalid index %d", index)
+	}
+	if !strings.HasPrefix(topic, d.topicPrefix) {
+		return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
+	}
+	if !strings.HasSuffix(topic, "/command") {
+		return fmt.Errorf("topic '%s' is missing suffix '/command' at index %d", topic, index)
+	}
+	d.commandTopics[index] = topic
+	return nil
 }
 
 // Parse a string into a bool

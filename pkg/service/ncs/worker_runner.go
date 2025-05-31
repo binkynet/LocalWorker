@@ -133,6 +133,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 			GRPCPort:          ncs.grpcPort,
 			SSHPort:           ncs.sshPort,
 			MQTTBrokerAddress: ncs.mqttBrokerAddress,
+			IsVirtual:         ncs.isVirtual,
 		}, worker.Dependencies{
 			Log:             log,
 			Bridge:          ncs.bridge,

@@ -46,6 +46,7 @@ type Config struct {
 	GRPCPort       int
 	SSHPort        int
 	HostID         string // Only used if not empty
+	IsVirtual      bool
 }
 
 type Dependencies struct {
@@ -167,7 +168,7 @@ func (s *service) Run(ctx context.Context) {
 			s.mutex.Unlock()
 			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
 				s.MetricsPort, s.GRPCPort, s.SSHPort, mqttBrokerAddress,
-				s.timeOffsetChanges, s.Bridge, nwControlClient)
+				s.timeOffsetChanges, s.Bridge, s.IsVirtual, nwControlClient)
 			s.mutex.Lock()
 			s.getRequestService = ncs
 			s.mutex.Unlock()
