@@ -47,10 +47,12 @@ type relaySwitch struct {
 }
 
 type relaySwitchDirection struct {
-	device devices.GPIO
-	pin    model.DeviceIndex
-	invert bool
-	pulse  time.Duration
+	device           devices.GPIO
+	pin              model.DeviceIndex
+	invert           bool
+	pulse            time.Duration
+	mqttStateTopic   string
+	mqttCommandTopic string
 }
 
 func (rsd relaySwitchDirection) activateRelay(ctx context.Context) error {
@@ -89,6 +91,9 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	}
 	straightInvert := straightConn.GetBoolConfig(model.ConfigKeyInvert)
 	straightPulse := straightConn.GetIntConfig(model.ConfigKeyPulse)
+	straightMqttStateTopic := straightConn.GetStringConfig(model.ConfigKeyMQTTStateTopic)
+	straightMqttCommandTopic := straightConn.GetStringConfig(model.ConfigKeyMQTTCommandTopic)
+
 	offConn, offPin, err := getSinglePin(oid, config, model.ConnectionNameOffRelay)
 	if err != nil {
 		return nil, err
@@ -99,13 +104,16 @@ func newRelaySwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	}
 	offInvert := offConn.GetBoolConfig(model.ConfigKeyInvert)
 	offPulse := offConn.GetIntConfig(model.ConfigKeyPulse)
+	offMqttStateTopic := offConn.GetStringConfig(model.ConfigKeyMQTTStateTopic)
+	offMqttCommandTopic := offConn.GetStringConfig(model.ConfigKeyMQTTCommandTopic)
+
 	return &relaySwitch{
 		log:      log,
 		config:   config,
 		address:  address,
 		sender:   sender,
-		straight: relaySwitchDirection{straightDev, straightPin.Index, straightInvert, time.Duration(straightPulse) * time.Millisecond},
-		off:      relaySwitchDirection{offDev, offPin.Index, offInvert, time.Duration(offPulse) * time.Millisecond},
+		straight: relaySwitchDirection{straightDev, straightPin.Index, straightInvert, time.Duration(straightPulse) * time.Millisecond, straightMqttStateTopic, straightMqttCommandTopic},
+		off:      relaySwitchDirection{offDev, offPin.Index, offInvert, time.Duration(offPulse) * time.Millisecond, offMqttStateTopic, offMqttCommandTopic},
 	}, nil
 }
 
@@ -119,11 +127,19 @@ func (o *relaySwitch) Configure(ctx context.Context) error {
 	if err := o.straight.device.SetDirection(ctx, o.straight.pin, devices.PinDirectionOutput); err != nil {
 		return err
 	}
+	if mqtt, ok := o.straight.device.(devices.MQTT); ok {
+		mqtt.SetStateTopic(o.straight.pin, o.straight.mqttStateTopic)
+		mqtt.SetCommandTopic(o.straight.pin, o.straight.mqttCommandTopic)
+	}
 	if err := o.straight.deactivateRelay(ctx); err != nil {
 		return err
 	}
 	if err := o.off.device.SetDirection(ctx, o.off.pin, devices.PinDirectionOutput); err != nil {
 		return err
+	}
+	if mqtt, ok := o.off.device.(devices.MQTT); ok {
+		mqtt.SetStateTopic(o.off.pin, o.off.mqttStateTopic)
+		mqtt.SetCommandTopic(o.off.pin, o.off.mqttCommandTopic)
 	}
 	if err := o.off.deactivateRelay(ctx); err != nil {
 		return err

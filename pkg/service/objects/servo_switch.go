@@ -55,10 +55,12 @@ type servoSwitch struct {
 }
 
 type phaseRelay struct {
-	device     devices.GPIO
-	pin        model.DeviceIndex
-	lastActive bool
-	invert     bool
+	device           devices.GPIO
+	pin              model.DeviceIndex
+	lastActive       bool
+	invert           bool
+	mqttStateTopic   string
+	mqttCommandTopic string
 }
 
 func (r *phaseRelay) configure(ctx context.Context) error {
@@ -67,6 +69,14 @@ func (r *phaseRelay) configure(ctx context.Context) error {
 	}
 	if err := r.device.Set(ctx, r.pin, r.pinValue(false)); err != nil {
 		return err
+	}
+	if mqtt, ok := r.device.(devices.MQTT); ok {
+		if err := mqtt.SetStateTopic(r.pin, r.mqttStateTopic); err != nil {
+			return err
+		}
+		if err := mqtt.SetCommandTopic(r.pin, r.mqttCommandTopic); err != nil {
+			return err
+		}
 	}
 	r.lastActive = false
 	return nil
@@ -128,6 +138,14 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 	sw.servo.straightPL = straightPL
 	sw.servo.offPL = offPL
 	sw.servo.stepSize = stepSize
+	if mqtt, ok := servoDev.(devices.MQTT); ok {
+		if err := mqtt.SetStateTopic(servoPin.Index, servoConn.GetStringConfig(model.ConfigKeyMQTTStateTopic)); err != nil {
+			return nil, err
+		}
+		if err := mqtt.SetCommandTopic(servoPin.Index, servoConn.GetStringConfig(model.ConfigKeyMQTTCommandTopic)); err != nil {
+			return nil, err
+		}
+	}
 
 	// Phase relay for straight direction
 	if _, found := config.ConnectionByName(model.ConnectionNamePhaseStraightRelay); found {
@@ -140,7 +158,9 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 			return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNamePhaseStraightRelay, oid)
 		}
 		invert := conn.GetBoolConfig(model.ConfigKeyInvert)
-		sw.servo.phaseStraight = &phaseRelay{phaseStraightDev, phaseStraightPin.Index, true, invert}
+		mqttStateTopic := conn.GetStringConfig(model.ConfigKeyMQTTStateTopic)
+		mqttCommandTopic := conn.GetStringConfig(model.ConfigKeyMQTTCommandTopic)
+		sw.servo.phaseStraight = &phaseRelay{phaseStraightDev, phaseStraightPin.Index, true, invert, mqttStateTopic, mqttCommandTopic}
 	}
 
 	// Phase relay for off direction
@@ -154,7 +174,9 @@ func newServoSwitch(sender string, oid model.ObjectID, address model.ObjectAddre
 			return nil, errors.Wrapf(err, "%s: (pin %s in object %s)", err.Error(), model.ConnectionNamePhaseOffRelay, oid)
 		}
 		invert := conn.GetBoolConfig(model.ConfigKeyInvert)
-		sw.servo.phaseOff = &phaseRelay{phaseOffDev, phaseOffPin.Index, true, invert}
+		mqttStateTopic := conn.GetStringConfig(model.ConfigKeyMQTTStateTopic)
+		mqttCommandTopic := conn.GetStringConfig(model.ConfigKeyMQTTCommandTopic)
+		sw.servo.phaseOff = &phaseRelay{phaseOffDev, phaseOffPin.Index, true, invert, mqttStateTopic, mqttCommandTopic}
 	}
 
 	return sw, nil
@@ -224,12 +246,16 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			}
 			if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, nextPL, true); err != nil {
 				// oops
-				o.log.Debug().
+				o.log.Warn().
 					Err(err).
 					Uint32("pulse", nextPL).
 					Msg("Set servo failed")
 			} else {
 				o.currentPL = nextPL
+				o.log.Debug().
+					Uint32("pulse", nextPL).
+					Str("servo_dev", fmt.Sprintf("%T", o.servo.device)).
+					Msg("Set servo succeeded")
 			}
 			disableDelayCount = 5
 		} else {
@@ -261,7 +287,7 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, false); err != nil {
 					// oops
-					o.log.Debug().
+					o.log.Warn().
 						Err(err).
 						Uint32("pulse", o.currentPL).
 						Msg("Set servo (disabled) failed")

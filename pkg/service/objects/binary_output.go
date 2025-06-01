@@ -64,6 +64,10 @@ func newBinaryOutput(sender string, oid model.ObjectID, address model.ObjectAddr
 	if pin < 1 || uint(pin) > gpio.PinCount() {
 		return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameOutput, oid, pin, gpio.PinCount())
 	}
+	if mqtt, ok := device.(devices.MQTT); ok {
+		mqtt.SetStateTopic(pin, conn.GetStringConfig(model.ConfigKeyMQTTStateTopic))
+		mqtt.SetCommandTopic(pin, conn.GetStringConfig(model.ConfigKeyMQTTCommandTopic))
+	}
 	invert := conn.GetBoolConfig(model.ConfigKeyInvert)
 	return &binaryOutput{
 		log:          log,

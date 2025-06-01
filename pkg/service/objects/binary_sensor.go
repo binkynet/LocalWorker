@@ -60,8 +60,8 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 	}
 	debug := conn.GetBoolConfig(model.ConfigKeyDebug)
 	var reader binarySensorReader
+	pin := conn.Pins[0].Index
 	if gpio, ok := device.(devices.GPIO); ok {
-		pin := conn.Pins[0].Index
 		if pin < 1 || uint(pin) > gpio.PinCount() {
 			return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, gpio.PinCount())
 		}
@@ -71,7 +71,6 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 			return nil, err
 		}
 	} else if adc, ok := device.(devices.ADC); ok {
-		pin := conn.Pins[0].Index
 		if pin < 1 || uint(pin) > adc.PinCount() {
 			return nil, model.InvalidArgument("Pin '%s' in object '%s' is out of range. Got %d. Range [1..%d]", model.ConnectionNameSensor, oid, pin, adc.PinCount())
 		}
@@ -83,6 +82,10 @@ func newBinarySensor(sender string, oid model.ObjectID, address model.ObjectAddr
 		}
 	} else {
 		return nil, model.InvalidArgument("Device '%s' in object '%s' is not a GPIO or ADC", conn.Pins[0].DeviceId, oid)
+	}
+	if mqtt, ok := device.(devices.MQTT); ok {
+		mqtt.SetStateTopic(pin, conn.GetStringConfig(model.ConfigKeyMQTTStateTopic))
+		mqtt.SetCommandTopic(pin, conn.GetStringConfig(model.ConfigKeyMQTTCommandTopic))
 	}
 	invert := conn.GetBoolConfig(model.ConfigKeyInvert)
 	return &binarySensor{

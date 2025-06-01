@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -70,7 +71,7 @@ type service struct {
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
 func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
-	configs []*model.Device,
+	configs []*model.Device, isVirtual bool,
 	bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		hardwareID:        hardwareID,
@@ -88,21 +89,45 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 		var err error
 		switch c.Type {
 		case model.DeviceTypeBinkyCarSensor:
-			dev, err = newBinkyCarSensor(log, *c, bus, s.onActive)
+			if isVirtual {
+				err = fmt.Errorf("no virtual implementation for binky-car-sensor")
+			} else {
+				dev, err = newBinkyCarSensor(log, *c, bus, s.onActive)
+			}
 		case model.DeviceTypeADS1115:
-			dev, err = newADS1115(*c, bus, s.onActive)
+			if isVirtual {
+				err = fmt.Errorf("no virtual implementation for ADS1115")
+			} else {
+				dev, err = newADS1115(*c, bus, s.onActive)
+			}
 		case model.DeviceTypeMCP23008:
-			dev, err = newMcp23008(*c, bus, s.onActive)
+			if isVirtual {
+				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+			} else {
+				dev, err = newMcp23008(*c, bus, s.onActive)
+			}
 		case model.DeviceTypeMCP23017:
-			dev, err = newMcp23017(*c, bus, s.onActive)
+			if isVirtual {
+				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+			} else {
+				dev, err = newMcp23017(*c, bus, s.onActive)
+			}
 		case model.DeviceTypePCA9685:
-			dev, err = newPCA9685(*c, bus, s.onActive)
+			if isVirtual {
+				dev, err = newMQTTServo(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+			} else {
+				dev, err = newPCA9685(*c, bus, s.onActive)
+			}
 		case model.DeviceTypePCF8574:
-			dev, err = newPCF8574(*c, bus, s.onActive)
+			if isVirtual {
+				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+			} else {
+				dev, err = newPCF8574(*c, bus, s.onActive)
+			}
 		case model.DeviceTypeMQTTGPIO:
-			dev, err = newMQTTGPIO(log, *c, s.onActive, moduleID, s.mqttBrokerAddress)
+			dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
 		case model.DeviceTypeMQTTServo:
-			dev, err = newMQTTServo(log, *c, s.onActive, moduleID, s.mqttBrokerAddress)
+			dev, err = newMQTTServo(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}
@@ -113,6 +138,11 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 	}
 	devicesCreatedTotal.Set(float64(len(s.devices)))
 	return s, nil
+}
+
+// Generate the default MQTT topic prefix for the given device config.
+func defaultMQTTTopicPrefix(c model.Device, moduleID string) string {
+	return strings.ToLower(fmt.Sprintf("/binky/%s/", moduleID))
 }
 
 // DeviceByID returns the device with given ID.
