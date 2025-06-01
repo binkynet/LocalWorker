@@ -322,21 +322,34 @@ func (s *service) sendPingMessages(ctx context.Context, nwControlClient model.Ne
 		},
 	}
 	lastPingLog := time.Now()
+	wasNotOnline := false
 	for {
-		// Send ping
-		msg.Actual.Uptime = int64(time.Since(s.startTime).Seconds())
-		msg.Actual.ConfiguredDeviceIds = s.devService.GetConfiguredDeviceIDs()
-		msg.Actual.ConfiguredObjectIds = s.getConfiguredObjectIDs()
-		msg.Actual.UnconfiguredDeviceIds = s.devService.GetUnconfiguredDeviceIDs()
-		msg.Actual.UnconfiguredObjectIds = s.getUnconfiguredObjectIDs()
+		// Check devices status
 		delay := time.Second * 5
-		if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
-			log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
-			delay = time.Second * 3
+		if s.devService.GetStatus() != devices.StatusOnline {
+			delay = time.Second
+			wasNotOnline = true
 		} else {
-			if time.Since(lastPingLog) > pingLogInterval {
-				log.Debug().Msg("Ping sent")
-				lastPingLog = time.Now()
+			// If we become online, restart start time
+			if wasNotOnline {
+				s.startTime = time.Now()
+				wasNotOnline = false
+			}
+			// Send ping
+			msg.Actual.Uptime = int64(time.Since(s.startTime).Seconds())
+			msg.Actual.ConfiguredDeviceIds = s.devService.GetConfiguredDeviceIDs()
+			msg.Actual.ConfiguredObjectIds = s.getConfiguredObjectIDs()
+			msg.Actual.UnconfiguredDeviceIds = s.devService.GetUnconfiguredDeviceIDs()
+			msg.Actual.UnconfiguredObjectIds = s.getUnconfiguredObjectIDs()
+			delay = time.Second * 5
+			if _, err := nwControlClient.SetLocalWorkerActual(ctx, &msg); err != nil && ctx.Err() == nil {
+				log.Info().Err(err).Msg("Failed to SetLocalWorkerActual")
+				delay = time.Second * 3
+			} else {
+				if time.Since(lastPingLog) > pingLogInterval {
+					log.Debug().Msg("Ping sent")
+					lastPingLog = time.Now()
+				}
 			}
 		}
 

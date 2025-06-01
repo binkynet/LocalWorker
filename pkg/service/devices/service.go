@@ -52,7 +52,21 @@ type Service interface {
 	GetUnconfiguredDeviceIDs() []string
 	// Perform a single device discovery
 	PerformDeviceDiscovery(ctx context.Context, req *api.DeviceDiscovery) error
+	// Get current status of service
+	GetStatus() Status
 }
+
+type Status uint8
+
+const (
+	StatusUnknown Status = iota
+	StatusOnline
+	StatusOffline
+)
+
+const (
+	statusDevID = api.DeviceID("statmon")
+)
 
 type service struct {
 	hardwareID        string
@@ -66,6 +80,7 @@ type service struct {
 	bAPI              bridge.API
 	activeCount       uint32
 	nwControlClient   model.NetworkControlServiceClient
+	lastStatus        Status
 }
 
 // NewService instantiates a new Service and Device's for the given
@@ -83,6 +98,19 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 		configuredDevices: make(map[model.DeviceID]Device),
 		bus:               bus,
 		bAPI:              bAPI,
+	}
+	if isVirtual {
+		s.lastStatus = StatusUnknown
+		monitorDev, err := newMQTTStatusMonitor(log, statusDevID, s.onActive, func(newStatus Status) {
+			s.log.Debug().Uint8("status", uint8(newStatus)).Msg("Got devices status change")
+			s.lastStatus = newStatus
+		}, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
+		if err != nil {
+			return nil, err
+		}
+		s.devices[statusDevID] = monitorDev
+	} else {
+		s.lastStatus = StatusOnline
 	}
 	for _, c := range configs {
 		var dev Device
@@ -102,32 +130,32 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 			}
 		case model.DeviceTypeMCP23008:
 			if isVirtual {
-				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 			} else {
 				dev, err = newMcp23008(*c, bus, s.onActive)
 			}
 		case model.DeviceTypeMCP23017:
 			if isVirtual {
-				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 			} else {
 				dev, err = newMcp23017(*c, bus, s.onActive)
 			}
 		case model.DeviceTypePCA9685:
 			if isVirtual {
-				dev, err = newMQTTServo(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+				dev, err = newMQTTServo(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 			} else {
 				dev, err = newPCA9685(*c, bus, s.onActive)
 			}
 		case model.DeviceTypePCF8574:
 			if isVirtual {
-				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+				dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 			} else {
 				dev, err = newPCF8574(*c, bus, s.onActive)
 			}
 		case model.DeviceTypeMQTTGPIO:
-			dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+			dev, err = newMQTTGPIO(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 		case model.DeviceTypeMQTTServo:
-			dev, err = newMQTTServo(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(*c, moduleID), s.mqttBrokerAddress)
+			dev, err = newMQTTServo(log, c.GetId(), s.onActive, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 		default:
 			return nil, model.InvalidArgument("Unsupported device type '%s'", c.Type)
 		}
@@ -141,7 +169,7 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 }
 
 // Generate the default MQTT topic prefix for the given device config.
-func defaultMQTTTopicPrefix(c model.Device, moduleID string) string {
+func defaultMQTTTopicPrefix(moduleID string) string {
 	return strings.ToLower(fmt.Sprintf("/binky/%s/", moduleID))
 }
 
@@ -270,4 +298,9 @@ func (s *service) GetUnconfiguredDeviceIDs() []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+// Gets current status
+func (s *service) GetStatus() Status {
+	return s.lastStatus
 }

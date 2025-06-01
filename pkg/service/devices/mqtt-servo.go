@@ -87,7 +87,6 @@ func (d *mqttServo) Configure(ctx context.Context) error {
 	opts := defaultMQTTClientOptions(d.mqttBrokerAddress, d.mqttClientID)
 
 	// Connect client
-	d.client = mqttapi.NewClient(opts)
 	opts.SetOnConnectHandler(func(c mqttapi.Client) {
 		d.log.Debug().Msg("Connected to MQTT")
 		topic := d.topicPrefix + "#"
@@ -101,6 +100,7 @@ func (d *mqttServo) Configure(ctx context.Context) error {
 		}
 	})
 
+	d.client = mqttapi.NewClient(opts)
 	if token := d.client.Connect(); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to connect to mqtt: %w", token.Error())
 	}
