@@ -25,6 +25,7 @@ import (
 	discovery "github.com/binkynet/BinkyNet/discovery"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 
 	"github.com/binkynet/LocalWorker/pkg/environment"
@@ -41,18 +42,23 @@ type Service interface {
 }
 
 type Config struct {
-	ProgramVersion string
-	MetricsPort    int
-	GRPCPort       int
-	SSHPort        int
-	HostID         string // Only used if not empty
-	IsVirtual      bool
+	ProgramVersion     string
+	MetricsPort        int
+	GRPCPort           int
+	SSHPort            int
+	HostID             string // Only used if not empty
+	IsVirtual          bool
+	VirtualServiceInfo *api.ServiceInfo
 }
 
 type Dependencies struct {
 	Logger     zerolog.Logger
 	Bridge     bridge.API
 	LokiLogger LokiLogger
+	// Semaphore used to guard from running multiple NCS instance
+	// concurrently.
+	NcsSem    *semaphore.Weighted
+	WorkerSem *semaphore.Weighted
 }
 
 type service struct {
@@ -95,7 +101,9 @@ func NewService(conf Config, deps Dependencies) (Service, error) {
 		timeOffsetChanges: make(chan int64),
 		startedAt:         time.Now(),
 	}
-	s.nwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeNetworkControl, true, s.nwControlChanged)
+	if !s.IsVirtual {
+		s.nwControlListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeNetworkControl, true, s.nwControlChanged)
+	}
 	s.lokiListener = discovery.NewServiceListener(deps.Logger, api.ServiceTypeLokiProvider, true, s.lokiChanged)
 	return s, nil
 }
@@ -117,7 +125,9 @@ func (s *service) Run(ctx context.Context) {
 	var nwControlInfo *api.ServiceInfo
 
 	// Start discovery listeners
-	go s.nwControlListener.Run(ctx)
+	if !s.IsVirtual {
+		go s.nwControlListener.Run(ctx)
+	}
 	go s.lokiListener.Run(ctx)
 	go s.LokiLogger.Run(ctx, log, s.hostID, s.lokiChanges, s.timeOffsetChanges)
 
@@ -126,16 +136,20 @@ func (s *service) Run(ctx context.Context) {
 		s.Bridge.BlinkGreenLED(time.Millisecond * 250)
 		s.Bridge.SetRedLED(false)
 
-		select {
-		case info := <-s.nwControlChanges:
-			// NetworkControlService discovery change detected
-			nwControlInfo = &info
-			log.Debug().Msg("NetworkControl discovery change received")
-		case <-ctx.Done():
-			// Context canceled
-			return
-		case <-time.After(time.Second * 2):
-			// Retry
+		if s.IsVirtual {
+			nwControlInfo = s.VirtualServiceInfo
+		} else {
+			select {
+			case info := <-s.nwControlChanges:
+				// NetworkControlService discovery change detected
+				nwControlInfo = &info
+				log.Debug().Msg("NetworkControl discovery change received")
+			case <-ctx.Done():
+				// Context canceled
+				return
+			case <-time.After(time.Second * 2):
+				// Retry
+			}
 		}
 
 		// Do we have discovery info for nwControl ?
@@ -168,11 +182,11 @@ func (s *service) Run(ctx context.Context) {
 			s.mutex.Unlock()
 			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
 				s.MetricsPort, s.GRPCPort, s.SSHPort, mqttBrokerAddress,
-				s.timeOffsetChanges, s.Bridge, s.IsVirtual, nwControlClient)
+				s.timeOffsetChanges, s.Bridge, s.IsVirtual, nwControlClient, s.WorkerSem)
 			s.mutex.Lock()
 			s.getRequestService = ncs
 			s.mutex.Unlock()
-			runErr := ncs.Run(ncsCtx)
+			runErr := ncs.Run(ncsCtx, s.NcsSem)
 			ncsCancel()
 			s.mutex.Lock()
 			s.getRequestService = nil

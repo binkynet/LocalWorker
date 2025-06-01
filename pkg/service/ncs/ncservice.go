@@ -35,7 +35,7 @@ import (
 // workers for a specific network control service.
 type NetworkControlService interface {
 	// Run workers until the given context is canceled.
-	Run(context.Context) error
+	Run(ctx context.Context, ncsSem *semaphore.Weighted) error
 	intf.GetRequestService
 }
 
@@ -44,7 +44,8 @@ type NetworkControlService interface {
 func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
 	metricsPort, grpcPort, sshPort int, mqttBrokerAddress string,
 	timeOffsetChanges chan int64, bridge bridge.API, isVirtual bool,
-	nwControlClient api.NetworkControlServiceClient) NetworkControlService {
+	nwControlClient api.NetworkControlServiceClient,
+	workerSem *semaphore.Weighted) NetworkControlService {
 	// Prepare logger
 	ncsID := atomic.AddUint32(&lastNcsID, 1)
 
@@ -65,6 +66,7 @@ func NewNetworkControlService(log zerolog.Logger, programVersion, hostID string,
 		bridge:            bridge,
 		isVirtual:         isVirtual,
 		nwControlClient:   nwControlClient,
+		workerSem:         workerSem,
 	}
 	return ncs
 }
@@ -84,6 +86,7 @@ type networkControlService struct {
 	bridge            bridge.API
 	nwControlClient   api.NetworkControlServiceClient
 	getrequestService intf.GetRequestService
+	workerSem         *semaphore.Weighted
 }
 
 var (
@@ -91,9 +94,6 @@ var (
 	lastNcsID uint32
 	// Last ID used for a worker
 	lastWorkerID uint32
-	// Semaphore used to guard from running multiple NCS instance
-	// concurrently.
-	ncsSem = semaphore.NewWeighted(1)
 	// Error returned when config loader stopped unexpected
 	errConfigLoaderStopped = errors.New("config loader stopped")
 	// Error returned when workers stopped unexpected
@@ -101,7 +101,7 @@ var (
 )
 
 // Run workers until the given context is canceled.
-func (ncs *networkControlService) Run(ctx context.Context) error {
+func (ncs *networkControlService) Run(ctx context.Context, ncsSem *semaphore.Weighted) error {
 	// Prepare logger
 	log := ncs.log
 

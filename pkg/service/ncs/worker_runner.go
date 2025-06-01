@@ -21,15 +21,8 @@ import (
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/rs/zerolog"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/binkynet/LocalWorker/pkg/service/worker"
-)
-
-var (
-	// Semaphore used to guard from running multiple worker instances
-	// concurrently.
-	workerSem = semaphore.NewWeighted(1)
 )
 
 // runWorkers keeps creating and running workers until the given context is cancelled.
@@ -82,7 +75,7 @@ func (ncs *networkControlService) runWorkers(ctx context.Context,
 				log.Debug().Msg("Acquiring worker semaphore...")
 				timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*10)
 				defer cancel()
-				if err := workerSem.Acquire(timeoutCtx, 1); err != nil {
+				if err := ncs.workerSem.Acquire(timeoutCtx, 1); err != nil {
 					log.Warn().Err(err).Msg("Failed to acquire worker semaphore")
 					if timeoutCtx.Err() != nil {
 						log.Fatal().Msg("Failed to acquire worker semaphore in time. Restarting")
@@ -92,7 +85,7 @@ func (ncs *networkControlService) runWorkers(ctx context.Context,
 				// Release semaphore when worker is done.
 				defer func() {
 					log.Debug().Msg("Releasing worker semaphore...")
-					workerSem.Release(1)
+					ncs.workerSem.Release(1)
 					log.Debug().Msg("Released worker semaphore.")
 				}()
 				log.Debug().Msg("Acquired worker semaphore.")

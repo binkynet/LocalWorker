@@ -26,6 +26,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/binkynet/BinkyNet/sshlog"
@@ -122,6 +123,8 @@ func main() {
 		Logger:     logger,
 		Bridge:     br,
 		LokiLogger: lokiLogger,
+		NcsSem:     semaphore.NewWeighted(1),
+		WorkerSem:  semaphore.NewWeighted(1),
 	})
 	if err != nil {
 		Exitf(logger, "Failed to initialize Service: %v\n", err)
