@@ -51,6 +51,8 @@ type Config struct {
 	SSHPort int
 	// Port to listen on for GRPC requests
 	GRPCPort int
+	// Is this server running as virtual local worker?
+	IsVirtual bool
 }
 
 // Server runs the HTTP server for the service.
@@ -147,15 +149,23 @@ func (s *Server) Run(ctx context.Context) error {
 	// Serve apis
 	log.Debug().Str("address", httpAddr).Msg("Serving HTTP")
 	go func() {
-		if err := httpSrv.Serve(httpLis); err != nil {
-			log.Fatal().Err(err).Msg("failed to serve HTTP server")
+		if err := httpSrv.Serve(httpLis); err != nil && err != http.ErrServerClosed {
+			if !s.IsVirtual {
+				log.Fatal().Err(err).Msg("failed to serve HTTP server")
+			} else {
+				log.Warn().Err(err).Msg("failed to serve HTTP server")
+			}
 		}
 		log.Debug().Str("address", httpAddr).Msg("Done Serving HTTP")
 	}()
 	log.Debug().Str("address", grpcAddr).Msg("Serving GRPC")
 	go func() {
 		if err := grpcSrv.Serve(grpcLis); err != nil {
-			log.Fatal().Err(err).Msg("failed to serve GRPC server")
+			if !s.IsVirtual {
+				log.Fatal().Err(err).Msg("failed to serve GRPC server")
+			} else {
+				log.Warn().Err(err).Msg("failed to serve GRPC server")
+			}
 		}
 		log.Debug().Str("address", httpAddr).Msg("Done Serving GRPC")
 	}()
@@ -163,7 +173,11 @@ func (s *Server) Run(ctx context.Context) error {
 	log.Debug().Str("address", sshAddr).Msg("Serving SSH")
 	go func() {
 		if err = sshServer.ListenAndServe(); err != nil {
-			log.Fatal().Err(err).Msg("failed to serve SSH server")
+			if !s.IsVirtual {
+				log.Fatal().Err(err).Msg("failed to serve SSH server")
+			} else {
+				log.Warn().Err(err).Msg("failed to serve SSH server")
+			}
 		}
 		log.Debug().Str("address", httpAddr).Msg("Done Serving SSH")
 	}()
