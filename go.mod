@@ -1,6 +1,6 @@
 module github.com/binkynet/LocalWorker
 
-go 1.22.5
+go 1.24.0
 
 replace github.com/coreos/go-systemd => github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a
 

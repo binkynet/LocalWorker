@@ -71,6 +71,7 @@ const (
 type service struct {
 	hardwareID        string
 	moduleID          string
+	routerNames       []string
 	programVersion    string
 	mqttBrokerAddress string
 	log               zerolog.Logger
@@ -86,11 +87,12 @@ type service struct {
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
 func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
-	configs []*model.Device, isVirtual bool,
+	configs []*model.Device, isVirtual bool, routerNames []string,
 	bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		hardwareID:        hardwareID,
 		moduleID:          moduleID,
+		routerNames:       routerNames,
 		programVersion:    programVersion,
 		mqttBrokerAddress: mqttBrokerAddress,
 		log:               log.With().Str("component", "device-service").Logger(),
