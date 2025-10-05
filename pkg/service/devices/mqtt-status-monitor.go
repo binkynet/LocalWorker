@@ -20,6 +20,7 @@ package devices
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	mqttapi "github.com/eclipse/paho.mqtt.golang"
@@ -29,28 +30,35 @@ import (
 )
 
 type mqttStatusMonitor struct {
-	log               zerolog.Logger
-	onActive          func()
-	onStatusChange    func(Status)
-	topicPrefix       string
-	mqttClientID      string
-	mqttBrokerAddress string
+	log                   zerolog.Logger
+	onActive              func()
+	onStatusChange        func(Status)
+	onUptimeSecondsChange func(int)
+	onIpAddressChange     func(string)
+	topicPrefix           string
+	mqttClientID          string
+	mqttBrokerAddress     string
 
-	client     mqttapi.Client
-	lastStatus Status
+	client        mqttapi.Client
+	lastStatus    Status
+	lastIpAddress string
 }
 
 // newMQTTStatusMonitor creates an MQTT status monitor.
-func newMQTTStatusMonitor(log zerolog.Logger, id model.DeviceID, onActive func(), onStatusChange func(Status), moduleID, topicPrefix, mqttBrokerAddress string) (*mqttStatusMonitor, error) {
+func newMQTTStatusMonitor(log zerolog.Logger, id model.DeviceID, onActive func(),
+	onStatusChange func(Status), onUptimeSecondsChange func(int), onIpAddressChange func(string),
+	moduleID, topicPrefix, mqttBrokerAddress string) (*mqttStatusMonitor, error) {
 	servo := &mqttStatusMonitor{
 		log: log.With().
 			Str("device_id", string(id)).
 			Logger(),
-		onActive:          onActive,
-		onStatusChange:    onStatusChange,
-		topicPrefix:       topicPrefix,
-		mqttClientID:      fmt.Sprintf("%s-%s", moduleID, id),
-		mqttBrokerAddress: mqttBrokerAddress,
+		onActive:              onActive,
+		onStatusChange:        onStatusChange,
+		onUptimeSecondsChange: onUptimeSecondsChange,
+		onIpAddressChange:     onIpAddressChange,
+		topicPrefix:           topicPrefix,
+		mqttClientID:          fmt.Sprintf("%s-%s", moduleID, id),
+		mqttBrokerAddress:     mqttBrokerAddress,
 	}
 	return servo, nil
 }
@@ -58,21 +66,22 @@ func newMQTTStatusMonitor(log zerolog.Logger, id model.DeviceID, onActive func()
 // Configure is called once to put the device in the desired state.
 func (d *mqttStatusMonitor) Configure(ctx context.Context) error {
 	// Prepare MQTT client options
-	topic := strings.TrimSuffix(d.topicPrefix, "/") + "/status"
+	topicQuery := strings.TrimSuffix(d.topicPrefix, "/") + "/#"
 	opts := defaultMQTTClientOptions(d.mqttBrokerAddress, d.mqttClientID)
 
 	// Prepare logger
-	log := d.log.With().Str("topic", topic).Logger()
+	log := d.log
 
 	// Connect client
 	opts.SetOnConnectHandler(func(c mqttapi.Client) {
 		log.Debug().Msg("Connected to MQTT")
-		if token := d.client.Subscribe(topic, 0, d.onMessage); token.Wait() && token.Error() != nil {
+		log := log.With().Str("topic", topicQuery).Logger()
+		if token := c.Subscribe(topicQuery, 0, d.onMessage); token.Wait() && token.Error() != nil {
 			log.Error().Err(token.Error()).
-				Msgf("failed to subscribe to '%s'", topic)
+				Msgf("failed to subscribe to '%s'", topicQuery)
 			c.Disconnect(500)
 		} else {
-			log.Debug().Msgf("Subscribed to MQTT topic '%s'", topic)
+			log.Debug().Msgf("Subscribed to MQTT topic '%s'", topicQuery)
 			d.onActive()
 		}
 	})
@@ -102,11 +111,23 @@ func (d *mqttStatusMonitor) Close(ctx context.Context) error {
 func (d *mqttStatusMonitor) onMessage(client mqttapi.Client, msg mqttapi.Message) {
 	topic := msg.Topic()
 	payload := strings.TrimSpace(string(msg.Payload()))
-	d.log.Debug().
+	log := d.log.With().
 		Str("topic", topic).
 		Str("payload", payload).
-		Msg("received status message")
+		Logger()
 
+	switch {
+	case strings.HasSuffix(topic, model.StatusTopicSuffix):
+		d.onStatusMessage(log, payload)
+	case strings.HasSuffix(topic, model.UptimeTopicSuffix):
+		d.onUptimeMessage(log, payload)
+	case strings.HasSuffix(topic, model.IpAddressTopicSuffix):
+		d.onIpAddressMessage(log, payload)
+	}
+}
+
+// Handle /status messages
+func (d *mqttStatusMonitor) onStatusMessage(log zerolog.Logger, payload string) {
 	status := StatusUnknown
 	switch payload {
 	case "online":
@@ -114,7 +135,7 @@ func (d *mqttStatusMonitor) onMessage(client mqttapi.Client, msg mqttapi.Message
 	case "offline":
 		status = StatusOffline
 	default:
-		d.log.Warn().
+		log.Warn().
 			Str("payload", payload).
 			Msg("Unknown payload in status message")
 		return
@@ -123,5 +144,22 @@ func (d *mqttStatusMonitor) onMessage(client mqttapi.Client, msg mqttapi.Message
 	if d.lastStatus != status {
 		d.lastStatus = status
 		d.onStatusChange(status)
+	}
+}
+
+// Handle /uptime messages
+func (d *mqttStatusMonitor) onUptimeMessage(log zerolog.Logger, payload string) {
+	if seconds, err := strconv.Atoi(payload); err != nil {
+		log.Warn().Err(err).Msg("Unknown payload on uptime messages")
+	} else {
+		d.onUptimeSecondsChange(seconds)
+	}
+}
+
+// Handle /uptime messages
+func (d *mqttStatusMonitor) onIpAddressMessage(log zerolog.Logger, payload string) {
+	if d.lastIpAddress != payload {
+		d.lastIpAddress = payload
+		d.onIpAddressChange(payload)
 	}
 }

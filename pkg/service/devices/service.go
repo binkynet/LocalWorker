@@ -89,6 +89,8 @@ type service struct {
 	activeCount       uint32
 	nwControlClient   model.NetworkControlServiceClient
 	lastStatuses      map[model.DeviceID]Status
+	lastUptimeSeconds map[model.DeviceID]int
+	lastIpAddress     map[model.DeviceID]string
 }
 
 // NewService instantiates a new Service and Device's for the given
@@ -106,6 +108,8 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
 		lastStatuses:      make(map[model.DeviceID]Status),
+		lastUptimeSeconds: make(map[model.DeviceID]int),
+		lastIpAddress:     map[model.DeviceID]string{},
 		bus:               bus,
 		bAPI:              bAPI,
 	}
@@ -113,12 +117,19 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 		if len(routers) == 0 {
 			log := s.log.With().Str("module_id", moduleID).Logger()
 			s.lastStatuses[statusDevID] = StatusUnknown
-			monitorDev, err := newMQTTStatusMonitor(log, statusDevID, s.onActive, func(newStatus Status) {
-				log.Debug().
-					Uint8("status", uint8(newStatus)).
-					Msg("Got local worker status change")
-				s.lastStatuses[statusDevID] = newStatus
-			}, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
+			monitorDev, err := newMQTTStatusMonitor(log, statusDevID, s.onActive,
+				func(newStatus Status) {
+					log.Debug().Uint8("status", uint8(newStatus)).Msg("Got local worker status change")
+					s.lastStatuses[statusDevID] = newStatus
+				},
+				func(seconds int) {
+					log.Debug().Int("uptime", seconds).Msg("Got local worker uptime change")
+					s.lastUptimeSeconds[statusDevID] = seconds
+				},
+				func(ipAddress string) {
+					log.Debug().Str("ip_address", ipAddress).Msg("Got local worker ip_address change")
+					s.lastIpAddress[statusDevID] = ipAddress
+				}, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
 			if err != nil {
 				return nil, err
 			}
@@ -129,12 +140,19 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 				log := s.log.With().Str("router_module_id", routerModuleID).Logger()
 				devID := routerStatusDeviceID(routerModuleID)
 				s.lastStatuses[devID] = StatusUnknown
-				monitorDev, err := newMQTTStatusMonitor(log, devID, s.onActive, func(newStatus Status) {
-					log.Debug().
-						Uint8("status", uint8(newStatus)).
-						Msg("Got router status change")
-					s.lastStatuses[devID] = newStatus
-				}, moduleID, defaultMQTTTopicPrefix(routerModuleID), s.mqttBrokerAddress)
+				monitorDev, err := newMQTTStatusMonitor(log, devID, s.onActive,
+					func(newStatus Status) {
+						log.Debug().Uint8("status", uint8(newStatus)).Msg("Got router status change")
+						s.lastStatuses[devID] = newStatus
+					},
+					func(seconds int) {
+						log.Debug().Int("uptime", seconds).Msg("Got router uptime change")
+						s.lastUptimeSeconds[devID] = seconds
+					},
+					func(ipAddress string) {
+						log.Debug().Str("ip_address", ipAddress).Msg("Got router ip_address change")
+						s.lastIpAddress[devID] = ipAddress
+					}, moduleID, defaultMQTTTopicPrefix(routerModuleID), s.mqttBrokerAddress)
 				if err != nil {
 					return nil, err
 				}
@@ -369,6 +387,9 @@ func (s *service) GetOnlineRouterInfos() []*api.RouterInfo {
 	for _, r := range s.routers {
 		status := s.GetStatus(r.GetModuleId())
 		if status == StatusOnline {
+			devID := routerStatusDeviceID(r.GetModuleId())
+			r.Uptime = int64(s.lastUptimeSeconds[devID])
+			r.IpAddress = s.lastIpAddress[devID]
 			result = append(result, r)
 		}
 	}
@@ -381,6 +402,8 @@ func (s *service) GetOfflineRouterInfos() []*api.RouterInfo {
 	for _, r := range s.routers {
 		status := s.GetStatus(r.GetModuleId())
 		if status != StatusOnline {
+			r.Uptime = 0
+			r.IpAddress = ""
 			result = append(result, r)
 		}
 	}
