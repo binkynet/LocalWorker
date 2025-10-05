@@ -23,8 +23,9 @@ require (
 	github.com/prometheus/client_golang v1.20.0
 	github.com/pulcy/go-terminate v0.0.0-20160630075856-d486fe7ee814
 	github.com/rs/zerolog v1.18.0
+	github.com/samber/lo v1.51.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/sync v0.8.0
+	golang.org/x/sync v0.11.0
 	golang.org/x/sys v0.24.0
 	google.golang.org/grpc v1.29.1
 )
@@ -75,7 +76,7 @@ require (
 	golang.org/x/crypto v0.25.0 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/net v0.27.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/genproto v0.0.0-20200423170343-7949de9c1215 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )

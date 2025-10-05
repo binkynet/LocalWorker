@@ -33,7 +33,7 @@ type Config struct {
 	SSHPort           int
 	MQTTBrokerAddress string
 	IsVirtual         bool
-	RouterNames       []string
+	Routers           []*model.RouterInfo
 }
 
 type Dependencies struct {
@@ -70,7 +70,7 @@ func (s *service) Run(ctx context.Context) error {
 	// Build devices service
 	log.Debug().Msg("build devices service")
 	devService, err := devices.NewService(s.config.HardwareID, s.config.ModuleID, s.config.ProgramVersion,
-		s.config.MQTTBrokerAddress, s.config.GetDevices(), s.config.IsVirtual, s.config.RouterNames, s.Bridge, bus, s.Log)
+		s.config.MQTTBrokerAddress, s.config.GetDevices(), s.config.IsVirtual, s.config.Routers, s.Bridge, bus, s.Log)
 	if err != nil {
 		log.Debug().Err(err).Msg("devices.NewService failed")
 		return fmt.Errorf("devices.NewService failed: %w", err)

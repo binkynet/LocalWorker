@@ -27,6 +27,7 @@ import (
 
 	aerr "github.com/ewoutp/go-aggregate-error"
 	"github.com/rs/zerolog"
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	api "github.com/binkynet/BinkyNet/apis/v1"
@@ -50,10 +51,16 @@ type Service interface {
 	GetConfiguredDeviceIDs() []string
 	// Get a list of unconfigured device IDs
 	GetUnconfiguredDeviceIDs() []string
+	// Get router info of all online routers
+	GetOnlineRouterInfos() []*api.RouterInfo
+	// Get router info of all offline routers
+	GetOfflineRouterInfos() []*api.RouterInfo
 	// Perform a single device discovery
 	PerformDeviceDiscovery(ctx context.Context, req *api.DeviceDiscovery) error
-	// Get current status of service
-	GetStatus() Status
+	// Gets current status or a router or local worker.
+	// If routerModuleID is empty, status of local worker is returned.
+	// Otherwise status of specified router is returned.
+	GetStatus(routerModuleID string) Status
 }
 
 type Status uint8
@@ -71,7 +78,7 @@ const (
 type service struct {
 	hardwareID        string
 	moduleID          string
-	routerNames       []string
+	routers           []*api.RouterInfo
 	programVersion    string
 	mqttBrokerAddress string
 	log               zerolog.Logger
@@ -81,38 +88,61 @@ type service struct {
 	bAPI              bridge.API
 	activeCount       uint32
 	nwControlClient   model.NetworkControlServiceClient
-	lastStatus        Status
+	lastStatuses      map[model.DeviceID]Status
 }
 
 // NewService instantiates a new Service and Device's for the given
 // device configurations.
 func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
-	configs []*model.Device, isVirtual bool, routerNames []string,
+	configs []*model.Device, isVirtual bool, routers []*api.RouterInfo,
 	bAPI bridge.API, bus bridge.I2CBus, log zerolog.Logger) (Service, error) {
 	s := &service{
 		hardwareID:        hardwareID,
 		moduleID:          moduleID,
-		routerNames:       routerNames,
+		routers:           routers,
 		programVersion:    programVersion,
 		mqttBrokerAddress: mqttBrokerAddress,
 		log:               log.With().Str("component", "device-service").Logger(),
 		devices:           make(map[model.DeviceID]Device),
 		configuredDevices: make(map[model.DeviceID]Device),
+		lastStatuses:      make(map[model.DeviceID]Status),
 		bus:               bus,
 		bAPI:              bAPI,
 	}
 	if isVirtual {
-		s.lastStatus = StatusUnknown
-		monitorDev, err := newMQTTStatusMonitor(log, statusDevID, s.onActive, func(newStatus Status) {
-			s.log.Debug().Uint8("status", uint8(newStatus)).Msg("Got devices status change")
-			s.lastStatus = newStatus
-		}, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
-		if err != nil {
-			return nil, err
+		if len(routers) == 0 {
+			log := s.log.With().Str("module_id", moduleID).Logger()
+			s.lastStatuses[statusDevID] = StatusUnknown
+			monitorDev, err := newMQTTStatusMonitor(log, statusDevID, s.onActive, func(newStatus Status) {
+				log.Debug().
+					Uint8("status", uint8(newStatus)).
+					Msg("Got local worker status change")
+				s.lastStatuses[statusDevID] = newStatus
+			}, moduleID, defaultMQTTTopicPrefix(moduleID), s.mqttBrokerAddress)
+			if err != nil {
+				return nil, err
+			}
+			s.devices[statusDevID] = monitorDev
+		} else {
+			for _, router := range routers {
+				routerModuleID := router.GetModuleId()
+				log := s.log.With().Str("router_module_id", routerModuleID).Logger()
+				devID := routerStatusDeviceID(routerModuleID)
+				s.lastStatuses[devID] = StatusUnknown
+				monitorDev, err := newMQTTStatusMonitor(log, devID, s.onActive, func(newStatus Status) {
+					log.Debug().
+						Uint8("status", uint8(newStatus)).
+						Msg("Got router status change")
+					s.lastStatuses[devID] = newStatus
+				}, moduleID, defaultMQTTTopicPrefix(routerModuleID), s.mqttBrokerAddress)
+				if err != nil {
+					return nil, err
+				}
+				s.devices[devID] = monitorDev
+			}
 		}
-		s.devices[statusDevID] = monitorDev
 	} else {
-		s.lastStatus = StatusOnline
+		s.lastStatuses[statusDevID] = StatusOnline
 	}
 	for _, c := range configs {
 		var dev Device
@@ -168,6 +198,11 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 	}
 	devicesCreatedTotal.Set(float64(len(s.devices)))
 	return s, nil
+}
+
+// Create the status device ID key for the router with given module id.
+func routerStatusDeviceID(routerModuleID string) model.DeviceID {
+	return model.DeviceID(fmt.Sprintf("%s-%s", statusDevID, routerModuleID))
 }
 
 // Generate the default MQTT topic prefix for the given device config.
@@ -302,7 +337,52 @@ func (s *service) GetUnconfiguredDeviceIDs() []string {
 	return result
 }
 
-// Gets current status
-func (s *service) GetStatus() Status {
-	return s.lastStatus
+// Gets current status or a router or local worker.
+// If routerModuleID is empty, status of local worker is returned.
+// Otherwise status of specified router is returned.
+func (s *service) GetStatus(routerModuleID string) Status {
+	if routerModuleID == "" {
+		if status, ok := s.lastStatuses[statusDevID]; ok {
+			return status
+		}
+		if len(s.lastStatuses) == 0 {
+			return StatusUnknown
+		}
+		all := lo.Values(s.lastStatuses)
+		return lo.Reduce(all, func(a, b Status, _ int) Status {
+			if a == StatusOnline || b == StatusOnline {
+				return StatusOnline
+			}
+			if a == StatusOffline || b == StatusOffline {
+				return StatusOffline
+			}
+			return StatusUnknown
+		}, all[0])
+	}
+	devID := routerStatusDeviceID(routerModuleID)
+	return s.lastStatuses[devID]
+}
+
+// Get router info of all online routers
+func (s *service) GetOnlineRouterInfos() []*api.RouterInfo {
+	result := make([]*api.RouterInfo, 0, len(s.routers))
+	for _, r := range s.routers {
+		status := s.GetStatus(r.GetModuleId())
+		if status == StatusOnline {
+			result = append(result, r)
+		}
+	}
+	return result
+}
+
+// Get router info of all offline routers
+func (s *service) GetOfflineRouterInfos() []*api.RouterInfo {
+	result := make([]*api.RouterInfo, 0, len(s.routers))
+	for _, r := range s.routers {
+		status := s.GetStatus(r.GetModuleId())
+		if status != StatusOnline {
+			result = append(result, r)
+		}
+	}
+	return result
 }

@@ -98,7 +98,7 @@ func (ncs *networkControlService) runWorkers(ctx context.Context,
 
 				// Run the worker
 				currentWorkerIDGauge.Set(float64(workerID))
-				ncs.runWorkerWithConfig(ctx, log, conf, moduleID, ncs.routerNames)
+				ncs.runWorkerWithConfig(ctx, log, conf, moduleID, ncs.routers)
 			}(lctx, log, *conf, workerID)
 		}
 	}
@@ -109,7 +109,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 	log zerolog.Logger,
 	conf api.LocalWorkerConfig,
 	moduleID string,
-	routerNames []string) {
+	routers []*api.RouterInfo) {
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -128,7 +128,7 @@ func (ncs *networkControlService) runWorkerWithConfig(ctx context.Context,
 			SSHPort:           ncs.sshPort,
 			MQTTBrokerAddress: ncs.mqttBrokerAddress,
 			IsVirtual:         ncs.isVirtual,
-			RouterNames:       routerNames,
+			Routers:           routers,
 		}, worker.Dependencies{
 			Log:             log,
 			Bridge:          ncs.bridge,

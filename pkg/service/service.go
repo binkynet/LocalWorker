@@ -48,7 +48,7 @@ type Config struct {
 	SSHPort            int
 	HostID             string // Only used if not empty
 	IsVirtual          bool
-	RouterNames        []string
+	Routers            []*api.RouterInfo
 	VirtualServiceInfo *api.ServiceInfo
 }
 
@@ -183,7 +183,7 @@ func (s *service) Run(ctx context.Context) {
 			s.mutex.Unlock()
 			ncs := ncs.NewNetworkControlService(log, s.ProgramVersion, s.hostID,
 				s.MetricsPort, s.GRPCPort, s.SSHPort, mqttBrokerAddress,
-				s.timeOffsetChanges, s.Bridge, s.IsVirtual, s.RouterNames, nwControlClient, s.WorkerSem)
+				s.timeOffsetChanges, s.Bridge, s.IsVirtual, s.Routers, nwControlClient, s.WorkerSem)
 			s.mutex.Lock()
 			s.getRequestService = ncs
 			s.mutex.Unlock()

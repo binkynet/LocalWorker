@@ -58,23 +58,26 @@ func newMQTTStatusMonitor(log zerolog.Logger, id model.DeviceID, onActive func()
 // Configure is called once to put the device in the desired state.
 func (d *mqttStatusMonitor) Configure(ctx context.Context) error {
 	// Prepare MQTT client options
+	topic := strings.TrimSuffix(d.topicPrefix, "/") + "/status"
 	opts := defaultMQTTClientOptions(d.mqttBrokerAddress, d.mqttClientID)
+
+	// Prepare logger
+	log := d.log.With().Str("topic", topic).Logger()
 
 	// Connect client
 	opts.SetOnConnectHandler(func(c mqttapi.Client) {
-		d.log.Debug().Msg("Connected to MQTT")
-		topic := strings.TrimSuffix(d.topicPrefix, "/") + "/status"
+		log.Debug().Msg("Connected to MQTT")
 		if token := d.client.Subscribe(topic, 0, d.onMessage); token.Wait() && token.Error() != nil {
-			d.log.Error().Err(token.Error()).
+			log.Error().Err(token.Error()).
 				Msgf("failed to subscribe to '%s'", topic)
 			c.Disconnect(500)
 		} else {
-			d.log.Debug().Msgf("Subscribed to MQTT topic '%s'", topic)
+			log.Debug().Msgf("Subscribed to MQTT topic '%s'", topic)
 			d.onActive()
 		}
 	})
 
-	d.log.Debug().Msg("Connecting to MQTT...")
+	log.Debug().Msg("Connecting to MQTT...")
 	d.client = mqttapi.NewClient(opts)
 	if token := d.client.Connect(); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to connect to mqtt: %w", token.Error())
