@@ -28,6 +28,22 @@ func NewVirtualBridge() (API, error) {
 	return &virtualBridge{}, nil
 }
 
+// Returns number of local pins
+func (p *virtualBridge) PinCount() int {
+	return 8 // TODO
+}
+
+// Input initializes a GPIO input pin with the given pin number.
+func (p *virtualBridge) Input(pinNumber int, activeLow bool) (InputPin, error) {
+	return nil, fmt.Errorf("Invalid pin %d", pinNumber)
+}
+
+// Output initializes a GPIO output pin with the given pin number
+// and initial logical value.
+func (p *virtualBridge) Output(pinNumber int, activeLow bool, initialValue bool) (OutputPin, error) {
+	return nil, fmt.Errorf("Invalid pin %d", pinNumber)
+}
+
 // Turn Green status led on/off
 func (p *virtualBridge) SetGreenLED(on bool) error {
 	return nil

@@ -106,6 +106,45 @@ type stubAPI struct {
 	stubI2CBus
 }
 
+// Returns number of local pins
+func (p *stubAPI) PinCount() int {
+	return 17 // TODO
+}
+
+type stubInputPin struct {
+	pinNumber int
+	activeLow bool
+}
+
+func (inp stubInputPin) Read() (bool, error) {
+	return false, nil
+}
+
+// Input initializes a GPIO input pin with the given pin number.
+func (p *stubAPI) Input(pinNumber int, activeLow bool) (InputPin, error) {
+	return stubInputPin{pinNumber: pinNumber, activeLow: activeLow}, nil
+}
+
+type stubOutputPin struct {
+	pinNumber    int
+	activeLow    bool
+	initialValue bool
+}
+
+func (outp stubOutputPin) Write(bool) error {
+	return nil
+}
+
+// Output initializes a GPIO output pin with the given pin number
+// and initial logical value.
+func (p *stubAPI) Output(pinNumber int, activeLow bool, initialValue bool) (OutputPin, error) {
+	return stubOutputPin{
+		pinNumber:    pinNumber,
+		activeLow:    activeLow,
+		initialValue: initialValue,
+	}, nil
+}
+
 // Turn Green status led on/off
 func (s *stubAPI) SetGreenLED(on bool) error {
 	if on {

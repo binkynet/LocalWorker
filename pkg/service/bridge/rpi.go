@@ -105,6 +105,22 @@ func NewRaspberryPiBridge() (API, error) {
 	}, nil
 }
 
+// Returns number of local pins
+func (p *piBridge) PinCount() int {
+	return 17 // TODO
+}
+
+// Input initializes a GPIO input pin with the given pin number.
+func (p *piBridge) Input(pinNumber int, activeLow bool) (InputPin, error) {
+	return gpio.Input(pinNumber, activeLow)
+}
+
+// Output initializes a GPIO output pin with the given pin number
+// and initial logical value.
+func (p *piBridge) Output(pinNumber int, activeLow bool, initialValue bool) (OutputPin, error) {
+	return gpio.Output(pinNumber, activeLow, initialValue)
+}
+
 // Turn Green status led on/off
 func (p *piBridge) SetGreenLED(on bool) error {
 	if err := p.greenLed.Set(on); err != nil {

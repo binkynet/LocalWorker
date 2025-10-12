@@ -33,5 +33,25 @@ type API interface {
 	// Open the I2C bus
 	I2CBus() (I2CBus, error)
 
+	// Access to local GPIO
+
+	// Returns number of local pins
+	PinCount() int
+	// Input initializes a GPIO input pin with the given pin number.
+	Input(pinNumber int, activeLow bool) (InputPin, error)
+	// Output initializes a GPIO output pin with the given pin number
+	// and initial logical value.
+	Output(pinNumber int, activeLow bool, initialValue bool) (OutputPin, error)
+
 	Close() error
+}
+
+// InputPin is the interface satisfied by GPIO input pins.
+type InputPin interface {
+	Read() (bool, error)
+}
+
+// OutputPin is the interface satisfied by GPIO output pins.
+type OutputPin interface {
+	Write(bool) error
 }

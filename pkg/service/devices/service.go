@@ -166,6 +166,12 @@ func NewService(hardwareID, moduleID, programVersion, mqttBrokerAddress string,
 		var dev Device
 		var err error
 		switch c.Type {
+		case model.DeviceTypeGPIO:
+			if isVirtual {
+				err = fmt.Errorf("no virtual implementation for gpio")
+			} else {
+				dev, err = newLocalGPIO(*c, bAPI, s.onActive)
+			}
 		case model.DeviceTypeBinkyCarSensor:
 			if isVirtual {
 				err = fmt.Errorf("no virtual implementation for binky-car-sensor")

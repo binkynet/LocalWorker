@@ -63,6 +63,22 @@ func (p *orangepizeroBridge) SetGreenLED(on bool) error {
 	return nil
 }
 
+// Returns number of local pins
+func (p *orangepizeroBridge) PinCount() int {
+	return 17 // TODO
+}
+
+// Input initializes a GPIO input pin with the given pin number.
+func (p *orangepizeroBridge) Input(pinNumber int, activeLow bool) (InputPin, error) {
+	return gpio.Input(pinNumber, activeLow)
+}
+
+// Output initializes a GPIO output pin with the given pin number
+// and initial logical value.
+func (p *orangepizeroBridge) Output(pinNumber int, activeLow bool, initialValue bool) (OutputPin, error) {
+	return gpio.Output(pinNumber, activeLow, initialValue)
+}
+
 // Turn Red status led on/off
 func (p *orangepizeroBridge) SetRedLED(on bool) error {
 	if err := p.redLed.Set(on); err != nil {
