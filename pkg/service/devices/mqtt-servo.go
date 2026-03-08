@@ -240,10 +240,10 @@ func (d *mqttServo) SetStateTopic(index model.DeviceIndex, topic string) error {
 		return fmt.Errorf("invalid index %d", index)
 	}
 	if !strings.HasPrefix(topic, d.topicPrefix) {
-		return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
+		//return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
 	}
 	if !strings.HasSuffix(topic, "/state") {
-		return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
+		//return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
 	}
 	d.stateTopics[index] = topic
 	return nil
