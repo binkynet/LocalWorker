@@ -167,7 +167,7 @@ func (d *mqttGPIO) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 	topic := d.commandTopics[pin]
 	payload := formatBool(value)
 	retain := true
-	token := d.client.Publish(topic, 0, retain, payload)
+	token := d.client.Publish(topic, qosAtLeastOnce, retain, payload)
 	if !token.WaitTimeout(mqttPublishTimeout) {
 		d.log.Error().Err(token.Error()).
 			Str("topic", topic).
