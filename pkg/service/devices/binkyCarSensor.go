@@ -227,7 +227,7 @@ func (d *binkyCarSensor) MaxPWMValue() uint32 {
 }
 
 // SetPWM the output at given index (1...) to the given value
-func (d *binkyCarSensor) SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled bool) error {
+func (d *binkyCarSensor) SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled, finalState bool) error {
 	ioIndex := byte(output - 1)
 	value := uint8(offValue / 16)
 	if false {

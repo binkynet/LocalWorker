@@ -129,55 +129,84 @@ func (o *trackInverter) Run(ctx context.Context, requests RequestService, status
 			o.log.Debug().Msg("De-activate inverter")
 			delay = time.Millisecond
 			// First deactivate all relays
+			relaysChanged := false
 			if r := o.relayOutAInA; r != nil {
-				if err := r.deactivateRelay(ctx); err != nil {
+				if changed, err := r.deactivateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutAInA")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
 			}
 			if r := o.relayOutAInB; r != nil {
-				if err := r.deactivateRelay(ctx); err != nil {
+				if changed, err := r.deactivateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutAInB")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
 			}
 			if r := o.relayOutBInA; r != nil {
-				if err := r.deactivateRelay(ctx); err != nil {
+				if changed, err := r.deactivateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutBInA")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
 			}
 			if r := o.relayOutBInB; r != nil {
-				if err := r.deactivateRelay(ctx); err != nil {
+				if changed, err := r.deactivateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate relayOutBInB")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
+			}
+
+			// Wait a bit if relays changed to allow them to settle
+			if relaysChanged {
+				time.Sleep(time.Millisecond * 250)
+				relaysChanged = false
 			}
 
 			// Now set the desired relays
 			if o.targetState == model.TrackInverterStateDefault {
 				o.log.Debug().Msg("Activate inverter as default")
 				if r := o.relayOutAInA; r != nil {
-					if err := r.activateRelay(ctx); err != nil {
+					if changed, err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
+					} else {
+						relaysChanged = relaysChanged || changed
 					}
 				}
 				if r := o.relayOutBInB; r != nil {
-					if err := r.activateRelay(ctx); err != nil {
+					if changed, err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutBInB")
+					} else {
+						relaysChanged = relaysChanged || changed
 					}
 				}
 			} else if o.targetState == model.TrackInverterStateReverse {
 				o.log.Debug().Msg("Activate inverter as reverse")
 				if r := o.relayOutAInB; r != nil {
-					if err := r.activateRelay(ctx); err != nil {
+					if changed, err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutAInA")
+					} else {
+						relaysChanged = relaysChanged || changed
 					}
 				}
 				if r := o.relayOutBInA; r != nil {
-					if err := r.activateRelay(ctx); err != nil {
+					if changed, err := r.activateRelay(ctx); err != nil {
 						o.log.Warn().Err(err).Msg("Failed to activate relayOutBInA")
+					} else {
+						relaysChanged = relaysChanged || changed
 					}
 				}
 			}
 			o.currentState = o.targetState
 			initialized = true
+
+			// Wait a bit if relays changed to allow them to settle
+			if relaysChanged {
+				time.Sleep(time.Millisecond * 250)
+				relaysChanged = false
+			}
 		}
 		// Send actual message (if needed)
 		sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)

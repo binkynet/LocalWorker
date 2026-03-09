@@ -81,7 +81,7 @@ func (d *mqttGPIO) Configure(ctx context.Context) error {
 	opts.SetOnConnectHandler(func(c mqttapi.Client) {
 		d.log.Debug().Msg("Connected to MQTT")
 		topic := d.topicPrefix + "#"
-		if token := d.client.Subscribe(topic, 0, d.onMessage); token.Wait() && token.Error() != nil {
+		if token := c.Subscribe(topic, 0, d.onMessage); token.Wait() && token.Error() != nil {
 			d.log.Error().Err(token.Error()).
 				Msgf("failed to subscribe to '%s'", topic)
 			c.Disconnect(500)
@@ -167,7 +167,7 @@ func (d *mqttGPIO) Set(ctx context.Context, pin model.DeviceIndex, value bool) e
 	topic := d.commandTopics[pin]
 	payload := formatBool(value)
 	retain := true
-	token := d.client.Publish(topic, 0, retain, payload)
+	token := d.client.Publish(topic, qosAtLeastOnce, retain, payload)
 	if !token.WaitTimeout(mqttPublishTimeout) {
 		d.log.Error().Err(token.Error()).
 			Str("topic", topic).
@@ -203,10 +203,10 @@ func (d *mqttGPIO) SetStateTopic(index model.DeviceIndex, topic string) error {
 		return fmt.Errorf("invalid index %d", index)
 	}
 	if !strings.HasPrefix(topic, d.topicPrefix) {
-		return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
+		//return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
 	}
 	if !strings.HasSuffix(topic, "/state") {
-		return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
+		//return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
 	}
 	d.stateTopics[index] = topic
 	return nil
@@ -225,10 +225,10 @@ func (d *mqttGPIO) SetCommandTopic(index model.DeviceIndex, topic string) error 
 		return fmt.Errorf("invalid index %d", index)
 	}
 	if !strings.HasPrefix(topic, d.topicPrefix) {
-		return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
+		//	return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
 	}
 	if !strings.HasSuffix(topic, "/command") {
-		return fmt.Errorf("topic '%s' is missing suffix '/command' at index %d", topic, index)
+		//	return fmt.Errorf("topic '%s' is missing suffix '/command' at index %d", topic, index)
 	}
 	d.commandTopics[index] = topic
 	return nil

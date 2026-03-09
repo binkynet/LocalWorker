@@ -118,7 +118,7 @@ func (d *pca9685) MaxPWMValue() uint32 {
 
 // SetPWM the output at given index (1...) to the given value
 func (d *pca9685) SetPWM(ctx context.Context, output model.DeviceIndex,
-	onValue, offValue uint32, enabled bool) error {
+	onValue, offValue uint32, enabled, finalState bool) error {
 	regBase, err := d.regBase(output)
 	if err != nil {
 		return err

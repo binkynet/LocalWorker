@@ -164,12 +164,16 @@ func (d *mqttServo) isPublishNeeded(stateKey, payload string) bool {
 }
 
 // SetPWM the output at given index (1...) to the given value
-func (d *mqttServo) SetPWM(ctx context.Context, pin model.DeviceIndex, onValue, offValue uint32, enabled bool) error {
+func (d *mqttServo) SetPWM(ctx context.Context, pin model.DeviceIndex, onValue, offValue uint32, enabled, finalState bool) error {
 	d.mutex.RLock()
 	topic, topicFound := d.commandTopics[pin]
 	d.mutex.RUnlock()
 
 	level := (200.0 * (float64(offValue) / float64(d.MaxPWMValue()))) - 100.0
+	qos := qosAtMostOnce
+	if finalState {
+		qos = qosAtLeastOnce
+	}
 	if topicFound {
 		stateKey := strings.TrimSuffix(strings.TrimPrefix(topic, d.topicPrefix), "/command")
 		payload := strconv.FormatFloat(level, 'f', 3, 32)
@@ -181,7 +185,7 @@ func (d *mqttServo) SetPWM(ctx context.Context, pin model.DeviceIndex, onValue, 
 				Str("payload", payload).
 				Int("pin", int(pin)).
 				Msg("Publishing payload to MQTT command...")
-			token := d.client.Publish(topic, 0, retain, payload)
+			token := d.client.Publish(topic, qos, retain, payload)
 			if !token.WaitTimeout(mqttPublishTimeout) {
 				d.log.Error().Err(token.Error()).
 					Str("topic", topic).
@@ -240,10 +244,10 @@ func (d *mqttServo) SetStateTopic(index model.DeviceIndex, topic string) error {
 		return fmt.Errorf("invalid index %d", index)
 	}
 	if !strings.HasPrefix(topic, d.topicPrefix) {
-		return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
+		//return fmt.Errorf("topic '%s' is missing prefix '%s' at index %d", topic, d.topicPrefix, index)
 	}
 	if !strings.HasSuffix(topic, "/state") {
-		return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
+		//return fmt.Errorf("topic '%s' is missing suffix '/state' at index %d", topic, index)
 	}
 	d.stateTopics[index] = topic
 	return nil

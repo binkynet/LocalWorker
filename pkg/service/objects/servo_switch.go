@@ -82,24 +82,30 @@ func (r *phaseRelay) configure(ctx context.Context) error {
 	return nil
 }
 
-func (r *phaseRelay) activateRelay(ctx context.Context) error {
+// Activate a relay
+// Returns: changed, error
+func (r *phaseRelay) activateRelay(ctx context.Context) (bool, error) {
 	if !r.lastActive {
 		if err := r.device.Set(ctx, r.pin, r.pinValue(true)); err != nil {
-			return err
+			return true, err
 		}
 		r.lastActive = true
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
-func (r *phaseRelay) deactivateRelay(ctx context.Context) error {
+// Deactivate a relay
+// Returns: changed, error
+func (r *phaseRelay) deactivateRelay(ctx context.Context) (bool, error) {
 	if r.lastActive {
 		if err := r.device.Set(ctx, r.pin, r.pinValue(false)); err != nil {
-			return err
+			return true, err
 		}
 		r.lastActive = false
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func (r *phaseRelay) pinValue(value bool) bool {
@@ -204,12 +210,12 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 		}
 	}
 	enabled := true
-	if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
+	if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, enabled, false); err != nil {
 		return err
 	}
 	time.Sleep(time.Millisecond * 100)
 	enabled = false
-	if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, enabled); err != nil {
+	if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, enabled, true); err != nil {
 		return err
 	}
 	return nil
@@ -226,15 +232,24 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 		targetPL := atomic.LoadUint32(&o.targetPL)
 		if targetPL != o.currentPL {
 			// Ensure all phase relays are deactivated
+			relaysChanged := false
 			if r := o.servo.phaseStraight; r != nil {
-				if err := r.deactivateRelay(ctx); err != nil {
+				if changed, err := r.deactivateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
 			}
 			if r := o.servo.phaseOff; r != nil {
-				if err := r.deactivateRelay(ctx); err != nil {
+				if changed, err := r.deactivateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
+			}
+			// Wait a bit to settle relays if they changed
+			if relaysChanged {
+				time.Sleep(time.Millisecond * 250)
 			}
 			// Make current pulse length closer to target pulse length
 			step := minInt(o.servo.stepSize, absInt(int(targetPL)-int(o.currentPL)))
@@ -244,7 +259,8 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			} else {
 				nextPL = o.currentPL - uint32(step)
 			}
-			if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, nextPL, true); err != nil {
+			finalState := nextPL == targetPL
+			if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, nextPL, true, finalState); err != nil {
 				// oops
 				o.log.Warn().
 					Err(err).
@@ -269,23 +285,32 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 				currentDirection = model.SwitchDirection_OFF
 			}
 			// Set phase relays
+			relaysChanged := false
 			if r := o.servo.phaseStraight; r != nil && currentDirection == model.SwitchDirection_STRAIGHT {
-				if err := r.activateRelay(ctx); err != nil {
+				if changed, err := r.activateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
 				//o.log.Debug().Msg("Activated straight")
 			}
 			if r := o.servo.phaseOff; r != nil && currentDirection == model.SwitchDirection_OFF {
-				if err := r.activateRelay(ctx); err != nil {
+				if changed, err := r.activateRelay(ctx); err != nil {
 					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
+				} else {
+					relaysChanged = relaysChanged || changed
 				}
 				//o.log.Debug().Msg("Activated off")
+			}
+			// Wait a bit to settle relays if they changed
+			if relaysChanged {
+				time.Sleep(time.Millisecond * 250)
 			}
 			// Disable PWM (if counter == 0)
 			if disableDelayCount > 0 {
 				disableDelayCount--
 			} else {
-				if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, false); err != nil {
+				if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, false, true); err != nil {
 					// oops
 					o.log.Warn().
 						Err(err).

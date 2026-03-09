@@ -31,7 +31,7 @@ type PWM interface {
 	// MaxPWMValue returns the maximum valid value for onValue or offValue.
 	MaxPWMValue() uint32
 	// SetPWM the output at given index (1...) to the given value
-	SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled bool) error
+	SetPWM(ctx context.Context, output model.DeviceIndex, onValue, offValue uint32, enabled, finalState bool) error
 	// GetPWM the output at given index (1...)
 	// Returns onValue,offValue,enabled,error
 	GetPWM(ctx context.Context, output model.DeviceIndex) (uint32, uint32, bool, error)

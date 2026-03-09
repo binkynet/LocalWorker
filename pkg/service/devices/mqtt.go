@@ -32,6 +32,12 @@ type MQTT interface {
 	SetCommandTopic(index model.DeviceIndex, topic string) error
 }
 
+const (
+	qosAtMostOnce  = byte(0)
+	qosAtLeastOnce = byte(1)
+	qosExactlyOnce = byte(2)
+)
+
 // Create default options for MQTT clients
 func defaultMQTTClientOptions(mqttBrokerAddress, mqttClientID string) *mqttapi.ClientOptions {
 	// Prepare MQTT client options
