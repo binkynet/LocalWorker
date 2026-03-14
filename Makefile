@@ -30,7 +30,7 @@ bootstrap:
 	docker build -t u-root-builder -f Dockerfile.u-root .
 	docker build -t mkimage-builder -f Dockerfile.mkimage .
 
-binaries: 
+binaries:
 	CGO_ENABLED=0 gox \
 		-osarch="linux/amd64 linux/arm linux/arm64 darwin/amd64 darwin/arm64" \
 		-ldflags="-X main.projectVersion=$(VERSION) -X main.projectBuild=$(COMMIT)" \
@@ -83,7 +83,7 @@ deployment: $(ALLDEPLOYMENTS)
 
 .PHONY: update-modules
 update-modules:
-	rm -f go.mod go.sum 
+	rm -f go.mod go.sum
 	go mod init github.com/binkynet/LocalWorker
 	go mod edit \
 		-replace github.com/coreos/go-systemd=github.com/coreos/go-systemd@e64a0ec8b42a61e2a9801dc1d0abe539dea79197
@@ -96,4 +96,4 @@ deploy:
 	scp bin/arm/boot.scr.uimg pi@192.168.77.1:/home/pi/tftp/
 
 deploy-local:
-	scp bin/linux/arm/bnLocalWorker pi@192.168.140.104:/home/pi/
+	scp bin/linux/arm/bnLocalWorker pi@192.168.121.117:/home/pi/

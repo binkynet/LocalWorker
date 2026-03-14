@@ -19,6 +19,7 @@ package objects
 
 import (
 	"context"
+	"strings"
 
 	model "github.com/binkynet/BinkyNet/apis/v1"
 	"github.com/pkg/errors"
@@ -51,7 +52,9 @@ func (switchType) Run(ctx context.Context, log zerolog.Logger, requests RequestS
 				return errors.Errorf("Expected object of type switchAPI")
 			}
 		} else if !isGlobal {
-			log.Debug().Msg("object not found")
+			if !strings.Contains(strings.ToLower(string(msg.Address)), "car") {
+				log.Debug().Msg("object not found")
+			}
 		}
 		return nil
 	})

@@ -1,7 +1,7 @@
-FROM golang:1.22
+FROM golang:1.24.12
 
 RUN go mod init github.com/binkynet/u-root-build-image && \
-    go install github.com/u-root/u-root@v0.14.0
+    go install github.com/u-root/u-root@v0.16.0
 
 RUN mkdir -p /go/u-root && cd /go && \
-    git clone https://github.com/u-root/u-root
+    git clone --branch v0.16.0 https://github.com/u-root/u-root

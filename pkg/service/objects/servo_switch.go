@@ -34,6 +34,10 @@ var (
 	_ switchAPI = &servoSwitch{}
 )
 
+const (
+	relaySettleTimeout = time.Millisecond * 500
+)
+
 type servoSwitch struct {
 	mutex   sync.Mutex
 	log     zerolog.Logger
@@ -221,16 +225,88 @@ func (o *servoSwitch) Configure(ctx context.Context) error {
 	return nil
 }
 
+type servoSwitchRunState byte
+
+const (
+	// In the idle state, the relays are activated in
+	// the current position and we keep sending our
+	// actual position.
+	servoSwitchRunStateIdle servoSwitchRunState = iota
+	// In this state, we de-activate the relays and wait for them to settle.
+	servoSwitchRunStateDeactivateRelays
+	// In this state, we move the servo closer to the target position.
+	servoSwitchRunStateMoveServo
+	// In this state, the servo was told to move to its final
+	// position and we're giving it time to get there.
+	servoSwitchRunStateServoSettle
+	// In this state, we assume the servo has reached its target
+	// position and we'll disable its motor.
+	servoSwitchRunStateDisableServo
+	// In this state, we activate the relays and wait for them to settle.
+	servoSwitchRunStateActivateRelays
+)
+
 // Run the object until the given context is cancelled.
 func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses StatusService, moduleID string) error {
 	defer o.log.Debug().Msg("servoSwitch.Run terminated")
 	// Ensure we initialize directly after start
 	atomic.StoreInt32(&o.sendActualNeeded, 1)
 	lastSendActual := time.Now()
-	disableDelayCount := 0
+	state := servoSwitchRunStateIdle
+	targetPL := atomic.LoadUint32(&o.targetPL)
+	targetDirection := model.SwitchDirection_STRAIGHT
+	var startServoMoveTime time.Time
+	var servoSettleDoneTime time.Time
 	for {
-		targetPL := atomic.LoadUint32(&o.targetPL)
-		if targetPL != o.currentPL {
+		switch state {
+		// In the idle state, the relays are activated in
+		// the current position and we keep sending our
+		// actual position.
+		case servoSwitchRunStateIdle:
+			// Fetch new target (if any)
+			targetPL = atomic.LoadUint32(&o.targetPL)
+			// Calculate target direction
+			targetDirection = model.SwitchDirection_STRAIGHT
+			if targetPL == o.servo.offPL {
+				targetDirection = model.SwitchDirection_OFF
+			}
+
+			// Should we move?
+			if targetPL != o.currentPL {
+				// Yes we should move
+				state = servoSwitchRunStateDeactivateRelays
+			} else {
+				// No need to move, keep sending our actual position
+				currentDirection := model.SwitchDirection_STRAIGHT
+				if o.currentPL == o.servo.offPL {
+					currentDirection = model.SwitchDirection_OFF
+				}
+				// Send actual message (if needed)
+				sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
+				if sendNeeded {
+					o.log.Debug().
+						Uint32("pulse", o.currentPL).
+						Msg("Servo reached state, sending actual")
+				} else if time.Since(lastSendActual) > time.Second*5 {
+					// We need to keep sending actual status on regular interval
+					sendNeeded = true
+					lastSendActual = time.Now()
+				}
+				if sendNeeded {
+					msg := model.Switch{
+						Address: o.address,
+						Request: &model.SwitchState{
+							Direction: targetDirection,
+						},
+						Actual: &model.SwitchState{
+							Direction: currentDirection,
+						},
+					}
+					statuses.PublishSwitchActual(msg)
+				}
+			}
+		// In this state, we de-activate the relays and wait for them to settle.
+		case servoSwitchRunStateDeactivateRelays:
 			// Ensure all phase relays are deactivated
 			relaysChanged := false
 			if r := o.servo.phaseStraight; r != nil {
@@ -249,54 +325,83 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			}
 			// Wait a bit to settle relays if they changed
 			if relaysChanged {
-				time.Sleep(time.Millisecond * 250)
+				time.Sleep(relaySettleTimeout)
 			}
-			// Make current pulse length closer to target pulse length
-			step := minInt(o.servo.stepSize, absInt(int(targetPL)-int(o.currentPL)))
-			var nextPL uint32
-			if o.currentPL < targetPL {
-				nextPL = o.currentPL + uint32(step)
+			// Move to next state
+			startServoMoveTime = time.Now()
+			state = servoSwitchRunStateMoveServo
+		// In this state, we move the servo closer to the target position.
+		case servoSwitchRunStateMoveServo:
+			// First check if we reached the target position
+			if targetPL == o.currentPL {
+				// Yes the last servo position we send was the final one
+				// Calculate the time to settle
+				moveDuration := time.Since(startServoMoveTime)
+				// We assume the servo is settled after another have of the move time
+				servoSettleDoneTime = time.Now().Add(moveDuration / 2)
+				// Switch to the settle state
+				state = servoSwitchRunStateServoSettle
 			} else {
-				nextPL = o.currentPL - uint32(step)
+				// We'll make the current pulse length closer to target pulse length.
+				step := minInt(o.servo.stepSize, absInt(int(targetPL)-int(o.currentPL)))
+				var nextPL uint32
+				if o.currentPL < targetPL {
+					nextPL = o.currentPL + uint32(step)
+				} else {
+					nextPL = o.currentPL - uint32(step)
+				}
+				finalState := nextPL == targetPL
+				if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, nextPL, true, finalState); err != nil {
+					// oops
+					o.log.Warn().
+						Err(err).
+						Uint32("pulse", nextPL).
+						Msg("Set servo failed")
+				} else {
+					o.currentPL = nextPL
+					o.log.Debug().
+						Uint32("pulse", nextPL).
+						Str("servo_dev", fmt.Sprintf("%T", o.servo.device)).
+						Msg("Set servo succeeded")
+				}
 			}
-			finalState := nextPL == targetPL
-			if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, nextPL, true, finalState); err != nil {
+		// In this state, the servo was told to move to its final
+		// position and we're giving it time to get there.
+		case servoSwitchRunStateServoSettle:
+			// Did we reach the settle time?
+			if time.Now().After(servoSettleDoneTime) {
+				// Yes, we now assume the servo has settled.
+				state = servoSwitchRunStateDisableServo
+			} else {
+				// We wait a bit more
+			}
+		// In this state, we assume the servo has reached its target
+		// position and we'll disable its motor.
+		case servoSwitchRunStateDisableServo:
+			// Relays have settled, now we can disactivate the servo.
+			if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, false, true); err != nil {
 				// oops
 				o.log.Warn().
 					Err(err).
-					Uint32("pulse", nextPL).
-					Msg("Set servo failed")
-			} else {
-				o.currentPL = nextPL
-				o.log.Debug().
-					Uint32("pulse", nextPL).
-					Str("servo_dev", fmt.Sprintf("%T", o.servo.device)).
-					Msg("Set servo succeeded")
+					Uint32("pulse", o.currentPL).
+					Msg("Set servo (disabled) failed")
 			}
-			disableDelayCount = 5
-		} else {
-			// Requested position reached
-			targetDirection := model.SwitchDirection_STRAIGHT
-			if targetPL == o.servo.offPL {
-				targetDirection = model.SwitchDirection_OFF
-			}
-			currentDirection := model.SwitchDirection_STRAIGHT
-			if o.currentPL == o.servo.offPL {
-				currentDirection = model.SwitchDirection_OFF
-			}
+			state = servoSwitchRunStateActivateRelays
+			// In this state, we activate the relays and wait for them to settle.
+		case servoSwitchRunStateActivateRelays:
 			// Set phase relays
 			relaysChanged := false
-			if r := o.servo.phaseStraight; r != nil && currentDirection == model.SwitchDirection_STRAIGHT {
+			if r := o.servo.phaseStraight; r != nil && targetDirection == model.SwitchDirection_STRAIGHT {
 				if changed, err := r.activateRelay(ctx); err != nil {
-					o.log.Warn().Err(err).Msg("Failed to deactivate phase straight array")
+					o.log.Warn().Err(err).Msg("Failed to activate phase straight array")
 				} else {
 					relaysChanged = relaysChanged || changed
 				}
 				//o.log.Debug().Msg("Activated straight")
 			}
-			if r := o.servo.phaseOff; r != nil && currentDirection == model.SwitchDirection_OFF {
+			if r := o.servo.phaseOff; r != nil && targetDirection == model.SwitchDirection_OFF {
 				if changed, err := r.activateRelay(ctx); err != nil {
-					o.log.Warn().Err(err).Msg("Failed to deactivate phase off array")
+					o.log.Warn().Err(err).Msg("Failed to activate phase off array")
 				} else {
 					relaysChanged = relaysChanged || changed
 				}
@@ -304,44 +409,14 @@ func (o *servoSwitch) Run(ctx context.Context, requests RequestService, statuses
 			}
 			// Wait a bit to settle relays if they changed
 			if relaysChanged {
-				time.Sleep(time.Millisecond * 250)
+				time.Sleep(relaySettleTimeout)
 			}
-			// Disable PWM (if counter == 0)
-			if disableDelayCount > 0 {
-				disableDelayCount--
-			} else {
-				if err := o.servo.device.SetPWM(ctx, o.servo.index, 0, o.currentPL, false, true); err != nil {
-					// oops
-					o.log.Warn().
-						Err(err).
-						Uint32("pulse", o.currentPL).
-						Msg("Set servo (disabled) failed")
-				}
-			}
-			// Send actual message (if needed)
-			sendNeeded := atomic.CompareAndSwapInt32(&o.sendActualNeeded, 1, 0)
-			if sendNeeded {
-				o.log.Debug().
-					Uint32("pulse", o.currentPL).
-					Msg("Servo reached state, sending actual")
-			} else if time.Since(lastSendActual) > time.Second*5 {
-				// We need to keep sending actual status on regular interval
-				sendNeeded = true
-				lastSendActual = time.Now()
-			}
-			if sendNeeded {
-				msg := model.Switch{
-					Address: o.address,
-					Request: &model.SwitchState{
-						Direction: targetDirection,
-					},
-					Actual: &model.SwitchState{
-						Direction: currentDirection,
-					},
-				}
-				statuses.PublishSwitchActual(msg)
-			}
+			// Ensure we send an update next
+			atomic.StoreInt32(&o.sendActualNeeded, 1)
+			// Move to idle state
+			state = servoSwitchRunStateIdle
 		}
+
 		select {
 		case <-ctx.Done():
 			// Context canceled
